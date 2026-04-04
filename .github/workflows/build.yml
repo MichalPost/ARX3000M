@@ -40,7 +40,7 @@ jobs:
       cache_key: ${{ steps.cache_keys.outputs.key }}
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
 
@@ -50,7 +50,7 @@ jobs:
           echo "key=arx3000m-${{ env.OPENWRT_BRANCH }}-${{ hashFiles('config/*.config', 'packages/*/Makefile', 'theme/Makefile') }}" >> $GITHUB_OUTPUT
 
       - name: 缓存 dl 目录 (源码包)
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.3
         with:
           path: dl-cache
           key: dl-${{ steps.cache_keys.outputs.key }}
@@ -58,7 +58,7 @@ jobs:
             dl-arx3000m-${{ env.OPENWRT_BRANCH }}-
 
       - name: 缓存 ccache (编译缓存)
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.3
         with:
           path: ccache-dir
           # [L3] 去掉 run_id，使 build job 能命中同一 key 而非只能走 restore-keys 前缀匹配
@@ -79,10 +79,10 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: 恢复 dl 缓存
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.3
         with:
           path: dl-cache
           # [M6] 与 prepare job 保持一致，加上 "dl-" 前缀才能命中精确 key
@@ -91,7 +91,7 @@ jobs:
             dl-arx3000m-${{ env.OPENWRT_BRANCH }}-
 
       - name: 恢复 ccache 缓存
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.3
         with:
           path: ccache-dir
           # [L3] 与 prepare job 保持一致的 key，去掉 run_id
@@ -112,7 +112,7 @@ jobs:
             patch bash-completion coreutils quilt \
             re2c xsltproc zstd libzstd-dev \
             python3-yaml python3-werkzeug python3-requests \
-            upx-ucl uglifyjs htmlminifier \
+            upx-ucl \
             libxml2-utils xmlstarlet \
             bc jq rename
 
@@ -238,7 +238,7 @@ jobs:
           fi
 
       - name: 上传固件产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: arx3000m-firmware-${{ github.run_number }}
           path: firmware/
@@ -247,7 +247,7 @@ jobs:
 
       - name: 上传构建日志
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: build-log-${{ github.run_number }}
           path: |
@@ -268,10 +268,10 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: 下载固件产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v4.3.0
         with:
           name: arx3000m-firmware-${{ github.run_number }}
           path: firmware/
