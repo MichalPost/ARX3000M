@@ -15,7 +15,7 @@ define Package/luci-app-arx-network
   SUBMENU:=3. Applications
   TITLE:=ARX3000M Advanced Network Suite
   PKGARCH:=all
-  DEPENDS:=+luci-base +luci-compat +iptables +ip6tables +ip-full +kmod-ipt-nat +kmod-tun +coreutils
+  DEPENDS:=+luci-base +luci-compat +coreutils +ip-full
 endef
 
 define Package/luci-app-arx-network/description
