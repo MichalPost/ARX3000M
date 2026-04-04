@@ -1,0 +1,322 @@
+<%#
+    ARX3000M Theme — header + sidebar + toolbar
+-%>
+<!DOCTYPE html>
+<html lang="<%= luci.i18n.languageCode() %>" data-theme="dark" data-arx-sidebar="expanded">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="format-detection" content="telephone=no">
+    <title><%= pcdata(boardinfo.hostname or "ARX3000M") %> - <%= pcdata(page_title or luci.dispatcher.node_title()) %></title>
+    <script>
+    (function(){try{var T=['dark','light','sky','aurora'];var L='arx-theme',LK='arx-theme-user-set';if(localStorage.getItem(LK)==='1'){var v=localStorage.getItem(L);if(v&&T.indexOf(v)>=0){document.documentElement.setAttribute('data-theme',v);return;}}var v2=localStorage.getItem(L);if(v2==='sky'||v2==='aurora'){if(T.indexOf(v2)>=0){document.documentElement.setAttribute('data-theme',v2);return;}}var mq=window.matchMedia('(prefers-color-scheme: light)');document.documentElement.setAttribute('data-theme',mq.matches?'light':'dark');}catch(e){}})();
+    (function(){try{var M=['expanded','narrow','hidden'],K='arx-sidebar-mode',v=localStorage.getItem(K);if(v&&M.indexOf(v)>=0){document.documentElement.setAttribute('data-arx-sidebar',v);}}catch(e){}})();
+    </script>
+    <link rel="stylesheet" href="<%=media%>/css/style.css?v=2.7">
+    <% if css then for _, val in ipairs(css) do %>
+    <link rel="stylesheet" href="<%=resource%>/<%=val%>">
+    <% end end %>
+</head>
+<%
+local _arx_rp = luci.dispatcher.context and luci.dispatcher.context.requestpath
+local _arx_rps = ""
+if type(_arx_rp) == "table" then
+	_arx_rps = table.concat(_arx_rp, "/")
+elseif _arx_rp then
+	_arx_rps = tostring(_arx_rp)
+end
+%>
+<body class="lang_<%=luci.i18n.language()%>" data-page="<%= pcdata(_arx_rps) %>"
+      data-arx-realtime="<%=url('admin/arx-dashboard/realtime')%>">
+
+<div id="arx-page-skeleton" aria-hidden="true">
+    <div class="arx-skeleton-page-inner">
+        <div class="arx-skeleton arx-skeleton--title"></div>
+        <div class="arx-skeleton arx-skeleton--block"></div>
+        <div class="arx-skeleton arx-skeleton--row"></div>
+        <div class="arx-skeleton arx-skeleton--row" style="width:85%"></div>
+        <div class="arx-skeleton arx-skeleton--row" style="width:70%"></div>
+        <div class="arx-skeleton arx-skeleton--block" style="height:120px;margin-top:16px"></div>
+    </div>
+</div>
+<script>try{if(sessionStorage.getItem('arx-nav-skeleton')==='1'){var _sk=document.getElementById('arx-page-skeleton');if(_sk)_sk.classList.add('is-visible');}}catch(e){}</script>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+<defs>
+<symbol id="i-antenna" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 20v-2M8.5 20H16M8.5 16a7 7 0 0111 0M6 12a10 10 0 0112 0M2.5 8a14 14 0 0119 0"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="m20 20-3.5-3.5"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="i-panel-left" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" d="M9 4v16"/></symbol>
+<symbol id="i-layout-dashboard" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="5" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="11" width="7" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3" y="15" width="7" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+<symbol id="i-package" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M21 8l-9-4-9 4v8l9 4 9-4V8z"/><path fill="none" stroke="currentColor" stroke-width="2" d="M3.3 8L12 12l8.7-4M12 12v9"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" d="M3 12h18M12 3a16 16 0 000 18"/></symbol>
+<symbol id="i-activity" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+<symbol id="i-hard-drive" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" d="M4 8h16v10a2 2 0 01-2 2H6a2 2 0 01-2-2V8z"/><circle cx="9" cy="14" r="1.5" fill="currentColor"/><circle cx="15" cy="14" r="1.5" fill="currentColor"/></symbol>
+<symbol id="i-sparkles" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" d="M12 3v3M12 18v3M3 12h3M18 12h3"/><path fill="none" stroke="currentColor" stroke-width="2" d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></symbol>
+<symbol id="i-rocket" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" d="M4.5 16.5c-1.5 1.5-1.5 4-1.5 4s2.5 0 4-1.5l4.5-4.5M12 15l-3-9 9 3-4 2-2 4z"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M8 11V7a4 4 0 018 0v4"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" d="M3 21v-1a5 5 0 015-5h2"/><circle cx="17" cy="9" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" d="M21 21v-1a5 5 0 00-4-4.9"/></symbol>
+</defs>
+</svg>
+
+<div class="main">
+<%
+local arx_wiz_show = false
+local arx_wiz_url = ""
+pcall(function()
+	local nx = require "nixio"
+	if nx.fs.access("/etc/config/arx-wizard") then
+		local uc = require "luci.model.uci".cursor()
+		if uc:get("arx-wizard", "main", "completed") ~= "1" then
+			arx_wiz_show = true
+			arx_wiz_url = luci.dispatcher.build_url("admin/arx-wizard/wizard")
+		end
+	end
+end)
+%>
+<% if arx_wiz_show then %>
+<div class="arx-setup-banner">
+	<a class="arx-setup-banner__link" href="<%=arx_wiz_url%>">完成首次配置向导</a>
+	<span class="arx-setup-banner__hint">密码、WAN、WiFi、时区、IPv6</span>
+</div>
+<% end %>
+
+    <div class="main-left" id="sidebar">
+        <div class="sidebar">
+            <div class="brand">
+                <span class="brand-accent" aria-hidden="true"></span>
+                <div class="brand-row">
+                    <div class="brand-logo" aria-hidden="true"><svg class="arx-icon" width="20" height="20"><use href="#i-antenna"/></svg></div>
+                    <div class="brand-divider" aria-hidden="true"></div>
+                    <div class="brand-text">
+                        <h2 class="font-display">ARX3000M</h2>
+                        <span class="subtitle"><%= pcdata(boardinfo.hostname or "OpenWrt") %></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-search-wrap" id="sidebar-search-wrap">
+                <div class="search-icon-wrap"><span class="icon" aria-hidden="true"><svg class="arx-icon"><use href="#i-search"/></svg></span></div>
+                <input type="text" id="nav-search" placeholder="搜索功能…" autocomplete="off" oninput="filterNav(this.value)">
+                <div class="search-kbd-row"><kbd class="search-kbd">Ctrl</kbd><span class="search-kbd-plus">+</span><kbd class="search-kbd">K</kbd></div>
+            </div>
+
+            <ul id="main-nav" class="nav">
+            <%
+            local disp = luci.dispatcher
+            local ctx = disp.context
+            local function admin_nodes()
+                local tree = ctx and ctx.tree
+                local adm = tree and tree.nodes and tree.nodes["admin"]
+                return adm and adm.nodes or {}
+            end
+            local raw = admin_nodes()
+            local keys = {}
+            for k, _ in pairs(raw) do table.insert(keys, tostring(k)) end
+            table.sort(keys)
+
+            local rp = ctx and ctx.requestpath
+            local rpstr = type(rp) == "table" and table.concat(rp, "/") or tostring(rp or "")
+
+            local section_defs = {
+                { icon_id = 'i-layout-dashboard', label = '状态', dot = 'system', keywords = {'status','overview','routes','realtime','logs','dashboard','processes','mesh'} },
+                { icon_id = 'i-globe', label = '网络', dot = 'network', keywords = {'network','wireless','firewall','dhcp','diagnostics','mwan3','sqm','eqos'} },
+                { icon_id = 'i-sparkles', label = '服务', dot = 'services', keywords = {'services','system','adguardhome','ddns','ttyd','uhttpd','nginx','cron'} },
+                { icon_id = 'i-lock', label = 'VPN', dot = 'vpn', keywords = {'vpn','openvpn','wireguard','frp','passwall','clash','xray'} },
+                { icon_id = 'i-hard-drive', label = '存储', dot = 'nas', keywords = {'nas','docker','samba','nfs','disk','usb','mount','diskman'} },
+                { icon_id = 'i-rocket', label = '代理', dot = 'proxy', keywords = {'openclash','passwall','clash','v2ray','shadowsocks','proxy'} },
+                { icon_id = 'i-users', label = '管控', dot = 'control', keywords = {'accesscontrol','parentcontrol','timecontrol','arpbind','wol'} },
+                { icon_id = 'i-sparkles', label = '工具', dot = 'custom', keywords = {'commands','flashops','opkg','initmgr','upnp','nlbwmon'} },
+            }
+
+            local sections = {}
+            for i, def in ipairs(section_defs) do
+                sections[i] = { icon_id = def.icon_id, label = def.label, dot = def.dot, items = {} }
+            end
+
+            local function matchSection(name)
+                name = string.lower(name or '')
+                for i, def in ipairs(section_defs) do
+                    for _, kw in ipairs(def.keywords or {}) do
+                        if string.find(name, kw, 1, true) then return i end
+                    end
+                end
+                return #sections
+            end
+
+            for _, key in ipairs(keys) do
+                local node = raw[key]
+                if node and node.title and not node.hidden then
+                    local nm = node.name or key
+                    local secIdx = matchSection(nm)
+                    local item = {
+                        title = node.title,
+                        name = nm,
+                        url = disp.build_url("admin", nm),
+                        children = {},
+                        active = false
+                    }
+                    if node.nodes then
+                        for _, ch in pairs(node.nodes) do
+                            if ch.title and not ch.hidden then
+                                table.insert(item.children, {
+                                    title = ch.title,
+                                    name = ch.name,
+                                    url = disp.build_url("admin", nm, ch.name),
+                                    active = false
+                                })
+                            end
+                        end
+                    end
+                    if rpstr ~= "" and (string.find(rpstr, nm, 1, true)) then item.active = true end
+                    for _, c in ipairs(item.children) do
+                        if rpstr ~= "" and c.name and string.find(rpstr, c.name, 1, true) then
+                            c.active = true
+                            item.active = true
+                        end
+                    end
+                    table.insert(sections[secIdx].items, item)
+                end
+            end
+
+            for _, sec in ipairs(sections) do
+                if #sec.items > 0 then
+            %>
+                <li class="nav-section-title <%=sec.dot%>">
+                    <span class="section-icon" aria-hidden="true"></span><%= sec.label %>
+                    <span class="section-count"><%= #sec.items %></span>
+                </li>
+            <%
+                    for _, item in ipairs(sec.items) do
+                        local hasChildren = #item.children > 0
+                        local anyActiveChild = false
+                        for _, c in ipairs(item.children) do
+                            if c.active then anyActiveChild = true break end
+                        end
+            %>
+                <li class="nav-item<% if item.active or anyActiveChild then %> active expanded<% end %>">
+                    <a href="<%=item.url%>" title="<%= pcdata(item.title) %>">
+                        <span class="nav-icon" aria-hidden="true"><svg class="arx-icon arx-icon--nav"><use href="#<%=sec.icon_id%>"/></svg></span>
+                        <span class="nav-label"><%=item.title%></span>
+                    </a>
+                    <% if hasChildren then %>
+                    <span class="nav-arrow" aria-hidden="true">▼</span>
+                    <ul class="submenu">
+                        <% for _, child in ipairs(item.children) do %>
+                        <li<% if child.active then %> class="active"<% end %>><a href="<%=child.url%>"><%=child.title%></a></li>
+                        <% end %>
+                    </ul>
+                    <% end %>
+                </li>
+            <%
+                    end
+                end
+            end
+            %>
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-spark-wrap" id="arx-sidebar-spark-wrap" title="CPU / 内存% / 温度°C（约90秒）">
+                    <svg class="sidebar-spark-svg" id="arx-sidebar-spark-svg" viewBox="0 0 100 48" preserveAspectRatio="none" aria-hidden="true">
+                        <line class="sidebar-spark__grid" x1="0" y1="15.5" x2="100" y2="15.5"/>
+                        <line class="sidebar-spark__grid" x1="0" y1="31.5" x2="100" y2="31.5"/>
+                        <polyline class="sidebar-spark__line sidebar-spark__line--cpu" id="arx-spark-cpu" fill="none" points="0,8 100,8"/>
+                        <polyline class="sidebar-spark__line sidebar-spark__line--mem" id="arx-spark-mem" fill="none" points="0,24 100,24"/>
+                        <polyline class="sidebar-spark__line sidebar-spark__line--temp" id="arx-spark-temp" fill="none" points="0,40 100,40"/>
+                    </svg>
+                    <div class="sidebar-spark-legend"><span>C</span><span>M</span><span>T</span></div>
+                </div>
+                <div class="sys-quick-info">
+                    <span class="sys-status-item" id="bar-cpu" title="CPU">
+                        <span class="status-dot" aria-hidden="true"></span>
+                        <span class="status-value">--%</span>
+                    </span>
+                    <span class="sys-status-item" id="bar-mem" title="内存">
+                        <span class="status-dot" aria-hidden="true"></span>
+                        <span class="status-value">--%</span>
+                    </span>
+                    <span class="sys-status-item" id="bar-wan" title="WAN">
+                        <span class="status-dot" aria-hidden="true"></span>
+                        <span class="status-value">--</span>
+                    </span>
+                </div>
+                <div class="sidebar-devices-hint" id="sidebar-devices-hint" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-right">
+        <div class="head" id="head">
+            <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
+                <button type="button" class="showSide" id="arx-show-side" aria-label="打开菜单"><svg class="arx-icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
+                <nav class="breadcrumb" aria-label="面包屑">
+                <%
+                local disp_b = luci.dispatcher
+                local ctx_b = disp_b.context
+                local rp_b = type(ctx_b.requestpath) == "table" and ctx_b.requestpath or {}
+                local tree_b = ctx_b.tree
+                local home_b = disp_b.build_url("admin", "arx-dashboard", "overview")
+                local bc_items = { { title = "首页", url = home_b, current = false } }
+                local node_b = tree_b
+                for i = 1, #rp_b do
+                    local seg = tostring(rp_b[i] or "")
+                    if node_b and node_b.nodes then
+                        node_b = node_b.nodes[seg]
+                    else
+                        node_b = nil
+                    end
+                    local tit = seg
+                    if node_b and node_b.title then tit = tostring(node_b.title) end
+                    if not (i == 1 and seg == "admin") then
+                        local segs = {}
+                        for j = 1, i do segs[j] = rp_b[j] end
+                        local u = disp_b.build_url(unpack(segs))
+                        bc_items[#bc_items + 1] = { title = tit, url = u, current = false }
+                    end
+                end
+                if #bc_items > 0 then
+                    bc_items[#bc_items].current = true
+                end
+                for bi, it in ipairs(bc_items) do
+                %>
+                    <% if bi > 1 then %><span class="breadcrumb-sep" aria-hidden="true">›</span><% end %>
+                    <% if it.current then %>
+                    <span class="breadcrumb-current" aria-current="page"><%=pcdata(it.title)%></span>
+                    <% else %>
+                    <a href="<%=it.url%>"><%=pcdata(it.title)%></a>
+                    <% end %>
+                <%
+                end
+                %>
+                </nav>
+            </div>
+            <div class="toolbar">
+                <a href="<%=url('admin/arx-dashboard/overview')%>" class="toolbar-btn" title="仪表盘"><svg class="arx-icon" aria-hidden="true"><use href="#i-layout-dashboard"/></svg></a>
+                <a href="<%=url('admin/system/arx-software')%>" class="toolbar-btn" title="软件源"><svg class="arx-icon" aria-hidden="true"><use href="#i-package"/></svg></a>
+                <div class="sidebar-layout-picker" id="arx-sidebar-layout-picker">
+                    <button type="button" class="sidebar-layout-picker__trigger" id="arx-sidebar-layout-btn" aria-expanded="false" aria-haspopup="menu" title="侧栏布局（Ctrl+Shift+B 循环）">
+                        <svg class="arx-icon" width="18" height="18" aria-hidden="true"><use href="#i-panel-left"/></svg>
+                    </button>
+                    <ul class="sidebar-layout-picker__menu" id="arx-sidebar-layout-menu" hidden role="menu" aria-label="侧栏布局">
+                        <li role="none"><button type="button" class="sidebar-layout-picker__opt" role="menuitem" data-arx-sidebar-mode="expanded">展开</button></li>
+                        <li role="none"><button type="button" class="sidebar-layout-picker__opt" role="menuitem" data-arx-sidebar-mode="narrow">窄栏（仅图标）</button></li>
+                        <li role="none"><button type="button" class="sidebar-layout-picker__opt" role="menuitem" data-arx-sidebar-mode="hidden">隐藏</button></li>
+                    </ul>
+                </div>
+                <div class="theme-picker" id="arx-theme-picker">
+                    <button type="button" class="theme-picker__trigger theme-toggle" id="arx-theme-picker-btn" aria-expanded="false" aria-haspopup="menu" title="主题">
+                        <svg class="arx-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M12 3v3M12 18v3M3 12h3M18 12h3"/><path stroke-linecap="round" d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>
+                    </button>
+                    <ul class="theme-picker__menu" id="arx-theme-menu" hidden role="menu" aria-label="选择主题">
+                        <li role="none"><button type="button" class="theme-picker__opt" role="menuitem" data-arx-theme="dark">深色</button></li>
+                        <li role="none"><button type="button" class="theme-picker__opt" role="menuitem" data-arx-theme="light">浅色</button></li>
+                        <li role="none"><button type="button" class="theme-picker__opt" role="menuitem" data-arx-theme="sky">天蓝</button></li>
+                        <li role="none"><button type="button" class="theme-picker__opt" role="menuitem" data-arx-theme="aurora">极光渐变</button></li>
+                    </ul>
+                </div>
+                <a href="<%=url('admin/reboot')%>" class="toolbar-btn danger" title="重启">重启</a>
+                <a href="<%=url('logout')%>" class="toolbar-btn" style="font-size:11.5px;">退出</a>
+            </div>
+        </div>
+
+        <div class="main-inner">

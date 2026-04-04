@@ -1,0 +1,58 @@
+<%#
+    ARX3000M — 404 错误页（毛玻璃 + 返回首页）
+-%>
+<!DOCTYPE html>
+<html lang="<%= luci.i18n.languageCode() %>" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 · <%= pcdata(luci.sys.hostname()) %></title>
+    <script>
+    (function(){try{var K='arx-theme',T=['dark','light','sky','aurora'],v=localStorage.getItem(K);if(v&&T.indexOf(v)>=0)document.documentElement.setAttribute('data-theme',v);}catch(e){}})();
+    </script>
+    <link rel="stylesheet" href="<%=media%>/css/style.css?v=2.3">
+    <style>
+        .arx-error-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; overflow: hidden; background: var(--page-background); }
+        .arx-error-bg { position: absolute; inset: 0; z-index: 0; background: radial-gradient(ellipse at 30% 40%, rgba(91,107,192,0.14) 0%, transparent 55%), radial-gradient(ellipse at 70% 70%, rgba(139,92,246,0.1) 0%, transparent 50%); }
+        .arx-error-card { position: relative; z-index: 1; max-width: 420px; width: 100%; padding: 40px 36px; border-radius: 20px; text-align: center;
+            background: rgba(17, 24, 39, 0.65); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 32px 64px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.06); }
+        :is([data-theme="light"], [data-theme="sky"]) .arx-error-card { background: rgba(255,255,255,0.78); border-color: rgba(0,0,0,0.08); }
+        .arx-error-card h1 { font-size: 2.5rem; font-weight: 800; margin: 0 0 8px; letter-spacing: -0.04em; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .arx-error-card p { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin: 0 0 20px; }
+        .arx-error-msg { font-size: 12px; color: var(--text-secondary); word-break: break-all; margin-bottom: 24px; padding: 10px 12px; border-radius: 10px; background: var(--bg-hover); border: 1px solid var(--border-color); text-align: left; }
+        .arx-error-home { display: inline-flex; align-items: center; justify-content: center; min-width: 200px; padding: 14px 28px; border-radius: 12px; font-size: 15px; font-weight: 600; text-decoration: none; color: #fff !important;
+            background: linear-gradient(135deg, var(--primary), var(--accent)); box-shadow: 0 4px 20px rgba(var(--primary-rgb), 0.35); transition: transform 0.2s, box-shadow 0.2s; border: none; cursor: pointer; }
+        .arx-error-home:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(var(--primary-rgb), 0.45); }
+        .arx-error-illus { margin: 0 auto 20px; width: 160px; height: 120px; }
+    </style>
+</head>
+<body class="arx-error-page">
+    <div class="arx-error-bg" aria-hidden="true"></div>
+    <div class="arx-error-card">
+        <div class="arx-error-illus" aria-hidden="true">
+            <svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg" width="160" height="120">
+                <defs>
+                    <linearGradient id="g404a" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#5b6bc0"/><stop offset="100%" style="stop-color:#8b5cf6"/></linearGradient>
+                </defs>
+                <ellipse cx="100" cy="95" rx="55" ry="18" fill="rgba(91,107,192,0.15)"/>
+                <rect x="55" y="45" width="90" height="65" rx="12" fill="url(#g404a)" opacity="0.9"/>
+                <rect x="65" y="58" width="28" height="20" rx="4" fill="rgba(255,255,255,0.25)"/>
+                <rect x="107" y="58" width="28" height="20" rx="4" fill="rgba(255,255,255,0.15)"/>
+                <circle cx="78" cy="95" r="6" fill="#fff"/>
+                <circle cx="122" cy="95" r="6" fill="#fff"/>
+                <path d="M85 108 Q100 118 115 108" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+                <circle cx="160" cy="35" r="18" fill="#f59e0b" opacity="0.9"/>
+                <text x="154" y="42" font-size="16" font-weight="bold" fill="#1e293b">?</text>
+                <path d="M30 30 L45 45 M45 30 L30 45" stroke="var(--danger)" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+            </svg>
+        </div>
+        <h1>404</h1>
+        <p>这里什么也没有找到。链接可能已失效，或页面已被移动。</p>
+        <% if message and message ~= "" then %>
+        <div class="arx-error-msg"><%= pcdata(message) %></div>
+        <% end %>
+        <a class="arx-error-home" href="<%= luci.dispatcher.build_url("admin", "arx-dashboard", "overview") %>">返回首页</a>
+    </div>
+</body>
+</html>

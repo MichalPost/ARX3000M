@@ -1,0 +1,141 @@
+<%+header%>
+<h1>🔧 网络诊断工具</h1>
+<p style="margin-bottom:24px;color:var(--text-muted);">Ping / Traceroute / NSLookup / Netstat</p>
+
+<div class="cbi-section animate-in">
+    <h2>📦 诊断包（脱敏文本）</h2>
+    <p style="margin:0 0 12px 0;font-size:13px;color:var(--text-secondary);">汇总 uname、WAN 状态、日志与路由等，已弱化密码与 MAC；提交反馈前请再检查是否含隐私信息。</p>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <a href="<%=url('admin/arx-network/diag_bundle')%>?download=1" class="cbi-button cbi-button-apply" download>下载 arx-network-diag.txt</a>
+        <button type="button" class="cbi-button cbi-button-save" id="diag-copy-bundle">复制到剪贴板</button>
+    </div>
+    <pre id="diag-bundle-preview" style="display:none;margin-top:12px;max-height:12em;overflow:auto;background:var(--bg-card);padding:12px;border-radius:8px;font-size:11px;"></pre>
+</div>
+
+<div class="cbi-section animate-in">
+    <h2>📡 Ping 测试</h2>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+        <input type="text" id="ping-host" value="8.8.8.8" placeholder="目标主机/IP"
+               style="padding:9px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);width:260px;font-size:13.5px;">
+        <select id="ping-count" style="padding:9px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:13.5px;">
+            <option value="4">4 次</option>
+            <option value="10">10 次</option>
+            <option value="20">20 次</option>
+        </select>
+        <button onclick="doPing()" class="cbi-button cbi-button-apply">▶ Ping</button>
+    </div>
+    <pre id="ping-result" style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:16px;overflow-x:auto;max-height:280px;font-size:12.5px;line-height:1.6;color:var(--text-secondary);font-family:'SF Mono','Fira Code',monospace;"></pre>
+</div>
+
+<div class="cbi-section animate-in">
+    <h2>🛣️ Traceroute 路由追踪</h2>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+        <input type="text" id="trace-host" value="openwrt.org" placeholder="目标主机"
+               style="padding:9px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);width:260px;font-size:13.5px;">
+        <button onclick="doTrace()" class="cbi-button cbi-button-apply">▶ Traceroute</button>
+    </div>
+    <pre id="trace-result" style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:16px;overflow-x:auto;max-height:300px;font-size:12.5px;line-height:1.6;color:var(--text-secondary);font-family:'SF Mono','Fira Code',monospace;"></pre>
+</div>
+
+<div class="cbi-section animate-in">
+    <h2>🔍 DNS 查询 (NSLookup)</h2>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+        <input type="text" id="dns-host" value="openwrt.org" placeholder="域名或 IP"
+               style="padding:9px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);width:260px;font-size:13.5px;">
+        <button onclick="doDNS()" class="cbi-button cbi-button-apply">▶ NSLookup</button>
+    </div>
+    <pre id="dns-result" style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:var(--radius-md);padding:16px;overflow-x:auto;max-height:240px;font-size:12.5px;line-height:1.6;color:var(--text-secondary);font-family:'SF Mono','Fira Code',monospace;"></pre>
+</div>
+
+<div class="cbi-section animate-in">
+    <h2>🌐 网络连接 (Netstat)</h2>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;">
+        <button onclick="doNetstat()" class="cbi-button cbi-button-apply">🔄 刷新连接列表</button>
+        <span id="conn-count" class="badge badge-info">-- 个活跃连接</span>
+    </div>
+    <table id="netstat-table">
+        <thead><tr><th>协议</th><th>本地地址</th><th>远程地址</th><th>状态</th></tr></thead>
+        <tbody><tr><td colspan="4" style="text-align:center;padding:20px;">点击刷新按钮加载</td></tr></tbody>
+    </table>
+</div>
+
+<script>
+function doPing() {
+    var el = document.getElementById('ping-result');
+    el.textContent = '正在 Ping ' + document.getElementById('ping-host').value + ' ...';
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '<%=url("admin/arx-network/diag_ping")%>', true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.onload = function() { el.textContent = xhr.responseText || '(无输出)'; };
+    xhr.send('host=' + encodeURIComponent(document.getElementById('ping-host').value) + '&count=' + document.getElementById('ping-count').value);
+}
+
+function doTrace() {
+    var el = document.getElementById('trace-result');
+    el.textContent = '正在追踪到 ' + document.getElementById('trace-host').value + ' 的路由...';
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '<%=url("admin/arx-network/diag_traceroute")%>', true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.onload = function() { el.textContent = xhr.responseText || '(无输出)'; };
+    xhr.send('host=' + encodeURIComponent(document.getElementById('trace-host').value));
+}
+
+function doDNS() {
+    var el = document.getElementById('dns-result');
+    el.textContent = '正在查询 ' + document.getElementById('dns-host').value + ' ...';
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '<%=url("admin/arx-network/diag_nslookup")%>', true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.onload = function() { el.textContent = xhr.responseText || '(无输出)'; };
+    xhr.send('host=' + encodeURIComponent(document.getElementById('dns-host').value));
+}
+
+function doNetstat() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '<%=url("admin/arx-network/diag_netstat")%>?_=' + Date.now(), true);
+    xhr.onload = function() {
+        if (xhr.status === 200) try {
+            var d = JSON.parse(xhr.responseText);
+            var conns = d.connections || [];
+            document.getElementById('conn-count').textContent = d.total + ' 个活跃连接';
+            var html = '';
+            conns.forEach(function(c) {
+                html += '<tr>';
+                html += '<td><span class="badge ' + (c.proto==='tcp'?'badge-primary':'badge-info') + '">' + c.proto.toUpperCase() + '</span></td>';
+                html += '<td style="font-family:monospace;font-size:12px;">' + c.local_addr + '</td>';
+                html += '<td style="font-family:monospace;font-size:12px;">' + c.remote_addr + '</td>';
+                html += '<td>' + c.state + '</td>';
+                html += '</tr>';
+            });
+            if (!html) html = '<tr><td colspan="4" style="text-align:center;padding:16px;">暂无活跃连接</td></tr>';
+            document.querySelector('#netstat-table tbody').innerHTML = html;
+        } catch(e){}
+    };
+    xhr.send();
+}
+
+(function() {
+    var btn = document.getElementById('diag-copy-bundle');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '<%=url("admin/arx-network/diag_bundle")%>?_=' + Date.now(), true);
+        xhr.onload = function() {
+            if (xhr.status !== 200) return;
+            var pre = document.getElementById('diag-bundle-preview');
+            if (pre) {
+                pre.style.display = 'block';
+                pre.textContent = xhr.responseText;
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(xhr.responseText).then(function() {
+                    if (window.ARXTheme) ARXTheme.toast('诊断包已复制', 'success');
+                }).catch(function() {});
+            }
+        };
+        xhr.send();
+    });
+})();
+</script>
+
+<%+footer%>

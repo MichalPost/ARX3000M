@@ -1,0 +1,27 @@
+<%#
+    ARX3000M Theme v2.0 - Footer Template
+    Argon-inspired clean minimal footer
+-%>
+        </div>
+
+        <footer class="main-footer">
+            <div class="footer-inner">
+                <span class="footer-brand">ARX3000M</span>
+                <span class="footer-sep">·</span>
+                <span>Powered by OpenWrt</span>
+                <span class="footer-sep">·</span>
+                <a href="<%=luci.dispatcher.build_url('admin/arx-dashboard/recovery')%>" class="footer-link">恢复 / 救砖说明</a>
+                <span class="footer-sep">·</span>
+                <span><%=os.date("%Y-%m-%d %H:%M")%></span>
+            </div>
+        </footer>
+    </div>
+</div>
+
+<script src="<%=media%>/js/arx.js?v=2.7"></script>
+<% if js then for _, val in ipairs(js) do %>
+<script src="<%=resource%>/<%=val%>" defer></script>
+<% end end %>
+
+</body>
+</html>

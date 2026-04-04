@@ -1,0 +1,15 @@
+{
+    "arx-wificrack": {
+        "description": "ARX3000M WiFi Handshake Capture",
+        "read": {
+            "file": {
+                "/tmp/arx-wificrack/*": [ "read" ]
+            }
+        },
+        "write": {
+            "file": {
+                "/tmp/arx-wificrack/*": [ "write" ]
+            }
+        }
+    }
+}

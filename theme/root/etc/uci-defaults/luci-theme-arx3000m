@@ -1,0 +1,12 @@
+#!/bin/sh
+[ "${IPKG_INSTROOT}" = "" ] || exit 0
+
+uci -q batch <<-EOF >/dev/null
+	delete luci.themes.arx3000m
+	set luci.themes.arx3000m=internal
+	set luci.themes.arx3000m.name='ARX3000M'
+	set luci.themes.arx3000m.title='ARX3000M Modern'
+	commit luci
+EOF
+
+exit 0

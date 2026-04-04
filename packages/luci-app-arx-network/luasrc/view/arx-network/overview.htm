@@ -1,0 +1,138 @@
+<%+header%>
+<h1>🌐 高级网络工具</h1>
+<p style="margin-bottom:24px;color:var(--text-muted);">ARX3000M 网络功能总览</p>
+
+<div class="cbi-section animate-in" id="arx-net-health-dash" style="margin-bottom:20px;display:none;">
+    <h2 style="margin-bottom:8px;">网络健康（与仪表盘同源）</h2>
+    <p style="margin:0 0 12px 0;font-size:12px;color:var(--text-muted);">来自 arx-dashboard 聚合接口；未安装仪表盘时本块自动隐藏。</p>
+    <div class="dash-hero dash-hero--health" style="margin:0;">
+        <div class="dash-hero__item"><span class="dash-hero__label">DDNS</span><span class="dash-hero__value" id="nh-ddns">—</span></div>
+        <div class="dash-hero__sep" aria-hidden="true"></div>
+        <div class="dash-hero__item"><span class="dash-hero__label">SmartDNS</span><span class="dash-hero__value" id="nh-sd">—</span></div>
+        <div class="dash-hero__sep" aria-hidden="true"></div>
+        <div class="dash-hero__item"><span class="dash-hero__label">AdGuard</span><span class="dash-hero__value" id="nh-ag">—</span></div>
+        <div class="dash-hero__sep" aria-hidden="true"></div>
+        <div class="dash-hero__item"><span class="dash-hero__label">OpenClash</span><span class="dash-hero__value" id="nh-oc">—</span></div>
+        <div class="dash-hero__sep" aria-hidden="true"></div>
+        <div class="dash-hero__item"><span class="dash-hero__label">PassWall</span><span class="dash-hero__value" id="nh-pw">—</span></div>
+    </div>
+</div>
+
+<div class="status-grid">
+    <div class="status-card card-cpu animate-in" id="ddns-card">
+        <div class="card-icon">🌍</div>
+        <div class="card-label">DDNS 服务</div>
+        <div class="card-value" id="ddns-value">--</div>
+        <div class="card-sub" id="ddns-sub">动态 DNS</div>
+    </div>
+    <div class="status-card card-mem animate-in" id="upnp-card">
+        <div class="card-icon">↔️</div>
+        <div class="card-label">UPnP / NAT-PMP</div>
+        <div class="card-value" id="upnp-value">--</div>
+        <div class="card-sub" id="upnp-sub">端口映射</div>
+    </div>
+    <div class="status-card card-uptime animate-in">
+        <div class="card-icon">🛡️</div>
+        <div class="card-label">防火墙</div>
+        <div class="card-value" id="fw-value">--</div>
+        <div class="card-sub" id="fw-sub">规则统计</div>
+    </div>
+</div>
+
+<div class="cbi-section animate-in">
+    <h2>⚡ 快捷操作</h2>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
+        <a href="<%=url('admin/arx-network/portfw')%>" class="cbi-button cbi-button-add">➕ 添加端口转发</a>
+        <a href="<%=url('admin/arx-network/firewall_rules')%>" class="cbi-button cbi-button-add">🛡️ 编辑防火墙规则</a>
+        <a href="<%=url('admin/arx-network/diagnostics')%>" class="cbi-button cbi-button-link">🔧 网络诊断工具</a>
+        <button onclick="refreshStatus()" class="cbi-button cbi-button-apply">🔄 刷新状态</button>
+    </div>
+</div>
+
+<script>
+function loadNetHealthAgg() {
+    var sec = document.getElementById('arx-net-health-dash');
+    if (!sec) return;
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '<%=url("admin/arx-dashboard/network_health")%>?_=' + Date.now(), true);
+    xhr.timeout = 8000;
+    xhr.onload = function() {
+        if (xhr.status !== 200) { sec.style.display = 'none'; return; }
+        sec.style.display = 'block';
+        try {
+            var h = JSON.parse(xhr.responseText);
+            var dd = h.ddns || {}, en = dd.enabled || 0, run = dd.running || 0;
+            var el = document.getElementById('nh-ddns');
+            if (el) {
+                if (en === 0) { el.textContent = '未启用'; el.className = 'dash-hero__value'; }
+                else { el.textContent = run + '/' + en + ' 运行'; el.className = 'dash-hero__value ' + (run === en ? 'dash-hero__value--ok' : (run > 0 ? 'dash-hero__value--warn' : 'dash-hero__value--bad')); }
+            }
+            var dns = h.dns || {}, px = h.proxy || {};
+            function set(id, on) {
+                var e = document.getElementById(id);
+                if (!e) return;
+                e.textContent = on ? '运行中' : '未运行';
+                e.className = 'dash-hero__value ' + (on ? 'dash-hero__value--ok' : 'dash-hero__value--bad');
+            }
+            set('nh-sd', dns.smartdns);
+            set('nh-ag', dns.adguardhome);
+            set('nh-oc', px.openclash);
+            set('nh-pw', px.passwall);
+        } catch (e) { sec.style.display = 'none'; }
+    };
+    xhr.onerror = function() { sec.style.display = 'none'; };
+    xhr.send();
+}
+
+function refreshStatus() {
+    var xhr2 = new XMLHttpRequest();
+    xhr2.open('GET', '<%=url("admin/arx-network/ddns_status")%>', true);
+    xhr2.onload = function() {
+        if (xhr2.status === 200) try {
+            var d = JSON.parse(xhr2.responseText);
+            var svcs = d.services || [];
+            var active = svcs.filter(function(s){return s.enabled}).length;
+            document.getElementById('ddns-value').textContent = active + '/' + svcs.length;
+            document.getElementById('ddns-sub').textContent = active + ' 个服务运行中';
+        } catch(e){}
+    };
+    xhr2.send();
+
+    var xhr3 = new XMLHttpRequest();
+    xhr3.open('GET', '<%=url("admin/arx-network/upnp_status")%>', true);
+    xhr3.onload = function() {
+        if (xhr3.status === 200) try {
+            var d = JSON.parse(xhr3.responseText);
+            document.getElementById('upnp-value').textContent = d.running ? '运行中' : '已停止';
+            document.getElementById('upnp-sub').textContent = d.total_redirects + ' 个活跃转发';
+        } catch(e){}
+    };
+    xhr3.send();
+
+    // [M7] 防火墙规则数改为 AJAX 获取，避免服务端渲染时硬编码快照值
+    var xhr4 = new XMLHttpRequest();
+    xhr4.open('GET', '<%=url("admin/arx-dashboard/fw_status")%>?_=' + Date.now(), true);
+    xhr4.timeout = 5000;
+    xhr4.onload = function() {
+        if (xhr4.status === 200) try {
+            var fw = JSON.parse(xhr4.responseText);
+            var total = (fw.input || 0) + (fw.forward || 0) + (fw.nat || 0);
+            document.getElementById('fw-value').textContent = total;
+            document.getElementById('fw-sub').textContent = 'INPUT ' + (fw.input||0) + ' · FORWARD ' + (fw.forward||0) + ' · NAT ' + (fw.nat||0);
+        } catch(e) {
+            document.getElementById('fw-value').textContent = '--';
+        }
+    };
+    xhr4.onerror = function() { document.getElementById('fw-value').textContent = '--'; };
+    xhr4.send();
+
+    if (window.ARXTheme) ARXTheme.toast('状态已刷新', 'success');
+}
+
+refreshStatus();
+loadNetHealthAgg();
+setInterval(refreshStatus, 30000);
+setInterval(loadNetHealthAgg, 45000);
+</script>
+
+<%+footer%>

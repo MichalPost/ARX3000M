@@ -1,0 +1,14 @@
+{
+    "arx-network": {
+        "description": "ARX3000M Advanced Network Suite",
+        "read": {
+            "uci": [ "arx-network", "firewall", "ddns" ],
+            "file": {
+                "/tmp/dhcp.leases": [ "read" ]
+            }
+        },
+        "write": {
+            "uci": [ "arx-network" ]
+        }
+    }
+}

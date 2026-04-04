@@ -1,0 +1,17 @@
+{
+	"arx-software": {
+		"description": "ARX3000M opkg mirror / distfeeds",
+		"read": {
+			"file": {
+				"/etc/opkg/distfeeds.conf": ["read"],
+				"/etc/opkg/distfeeds.conf.bak": ["read"],
+				"/etc/opkg.conf": ["read"],
+				"/etc/config/fstab": ["read"],
+				"/etc/config/fstab.arx.bak": ["read"],
+				"/proc/mounts": ["read"],
+				"/etc/openwrt_release": ["read"]
+			}
+		},
+		"write": {}
+	}
+}

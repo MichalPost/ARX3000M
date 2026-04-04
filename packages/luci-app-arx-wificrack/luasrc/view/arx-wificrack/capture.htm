@@ -1,0 +1,827 @@
+<%+header%>
+<style>
+.arx-wc-page { margin-bottom: 8px; }
+.arx-wc-page .page-title-row h1 {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 1.65rem;
+    letter-spacing: -0.02em;
+}
+.arx-wc-page .page-subtitle {
+    display: block;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    max-width: 52rem;
+}
+.arx-wc-hero {
+    margin: 18px 0 22px;
+    padding: 16px 20px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.12) 0%, rgba(var(--accent-rgb), 0.06) 100%);
+    border: 1px solid rgba(var(--primary-rgb), 0.22);
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+.arx-wc-hero__icon {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: #fff;
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-md);
+}
+.arx-wc-hero__text strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+.arx-wc-hero__text { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+.arx-wc-section-head {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 0 0 12px;
+    padding: 0;
+    border: none;
+}
+.arx-wc-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px 28px;
+    align-items: start;
+}
+@media (max-width: 720px) {
+    .arx-wc-grid-2 { grid-template-columns: 1fr; }
+}
+.arx-wc-tool-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.arx-wc-tool-btn {
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition, 0.2s ease);
+}
+.arx-wc-tool-btn:hover {
+    border-color: rgba(var(--primary-rgb), 0.4);
+    color: var(--text-primary);
+}
+.arx-wc-tool-btn.is-active {
+    border-color: transparent;
+    background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.25), rgba(var(--accent-rgb), 0.12));
+    color: var(--primary-light);
+    box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.35);
+}
+.arx-wc-tip {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: rgba(var(--primary-rgb), 0.06);
+    border-left: 3px solid var(--primary-light);
+}
+.arx-wc-timeout-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.arx-wc-select {
+    padding: 8px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 13px;
+    min-width: 140px;
+    cursor: pointer;
+}
+.arx-wc-countdown { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.arx-wc-status-panel {
+    position: relative;
+    overflow: hidden;
+}
+.arx-wc-status-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    opacity: 0.35;
+    transition: opacity 0.3s ease;
+}
+.arx-wc-status-panel.arx-wc-status-panel--running::before {
+    opacity: 1;
+    animation: arx-wc-bar-shimmer 2s ease-in-out infinite;
+}
+@keyframes arx-wc-bar-shimmer {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.25); }
+}
+.arx-wc-status-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.arx-wc-status-row .badge { font-size: 11px; padding: 4px 12px; }
+.arx-wc-status-meta { font-size: 13px; color: var(--text-muted); }
+.arx-wc-target {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+}
+.arx-wc-target-label { font-size: 12px; color: var(--text-muted); margin-right: 6px; }
+.arx-wc-target #target-ssid { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.arx-wc-target #target-bssid { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
+.arx-wc-pills { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.arx-wc-pcap-meta { font-size: 12px; color: var(--text-muted); }
+.arx-wc-wifi-bar {
+    margin-top: 12px;
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    line-height: 1.45;
+}
+.arx-wc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+.arx-wc-actions .cbi-button {
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    padding: 8px 16px;
+    transition: var(--transition, 0.2s ease);
+}
+.arx-wc-actions .cbi-button-apply { box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.25); }
+.arx-wc-actions .arx-wc-btn-deauth {
+    background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+    color: #fff !important;
+    border: none !important;
+}
+.arx-wc-actions .arx-wc-btn-delete {
+    background: var(--danger) !important;
+    color: #fff !important;
+}
+.arx-wc-actions .arx-wc-btn-secondary {
+    background: var(--bg-input) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+.arx-wc-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+.arx-wc-panel-head h2, .arx-wc-panel-head .arx-wc-h2 {
+    margin: 0;
+    padding: 0;
+    border: none;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.arx-wc-panel-hint { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; line-height: 1.5; }
+.arx-wc-wifi-stack { display: flex; flex-direction: column; gap: 10px; }
+.arx-wc-wifi-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--arx-sig, var(--border-color));
+    transition: var(--transition, 0.2s ease);
+}
+.arx-wc-wifi-row:hover {
+    border-color: rgba(var(--primary-rgb), 0.35);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+.arx-wc-wifi-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.arx-wc-signal {
+    font-size: 18px;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+}
+.arx-wc-wifi-title { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.arx-wc-wifi-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.arx-wc-wifi-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.arx-wc-log-label { font-size: 12px; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.arx-wc-log-pre {
+    margin: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: ui-monospace, 'Cascadia Code', monospace;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+}
+.arx-wc-history-stack { display: flex; flex-direction: column; gap: 10px; }
+.arx-wc-history-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: var(--transition, 0.2s ease);
+}
+.arx-wc-history-row:hover {
+    border-color: rgba(var(--primary-rgb), 0.25);
+}
+.arx-wc-history-title { font-weight: 600; font-size: 13px; color: var(--text-primary); }
+.arx-wc-history-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.arx-wc-history-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.arx-wc-history-actions .cbi-button { padding: 6px 12px; font-size: 12px; border-radius: var(--radius-sm); }
+.arx-wc-empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 28px 16px; }
+.arx-wc-refresh { padding: 6px 14px !important; font-size: 12px !important; border-radius: var(--radius-md) !important; }
+.arx-wc-verify-box { padding: 14px 18px; border-radius: var(--radius-md); font-size: 13px; line-height: 1.55; }
+</style>
+
+<div class="arx-wc-page page-header">
+    <div class="page-title-row">
+        <h1><span class="live-dot" style="background:var(--accent);"></span> WiFi 握手包捕获</h1>
+        <span class="page-subtitle">扫描周围 WiFi，选择目标抓取 WPA/WPA2 握手包，下载 .22000 供 hashcat 使用。</span>
+    </div>
+</div>
+
+<div class="arx-wc-hero animate-in" aria-hidden="false">
+    <div class="arx-wc-hero__icon" aria-hidden="true">📡</div>
+    <div class="arx-wc-hero__text">
+        <strong>工作流程：</strong>选择抓包工具与超时 → 扫描并选定 AP → 等待 EAPOL/PMKID → 验证后可下载。抓包时本机 WiFi 可能短暂中断，属正常现象。
+    </div>
+</div>
+
+<!-- 工具选择 + 超时设置 -->
+<div class="cbi-section animate-in arx-wc-settings">
+    <div class="arx-wc-grid-2">
+        <div>
+            <h3 class="arx-wc-section-head">抓包工具</h3>
+            <div id="tool-list" class="arx-wc-tool-strip">
+                <span style="color:var(--text-muted);font-size:13px;">检测中...</span>
+            </div>
+            <div id="tool-tip" class="arx-wc-tip" style="display:none;"></div>
+        </div>
+        <div>
+            <h3 class="arx-wc-section-head">超时自动停止</h3>
+            <div class="arx-wc-timeout-row">
+                <select id="timeout-select" class="arx-wc-select">
+                    <option value="0">不限时</option>
+                    <option value="120">2 分钟</option>
+                    <option value="300" selected>5 分钟</option>
+                    <option value="600">10 分钟</option>
+                    <option value="1800">30 分钟</option>
+                </select>
+                <span id="timeout-countdown" class="arx-wc-countdown"></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 状态卡片 -->
+<div id="arx-wc-status-panel" class="cbi-section animate-in arx-wc-status-panel">
+    <div class="arx-wc-status-row">
+        <div id="status-badge" class="badge badge-primary">⏸ 空闲</div>
+        <span id="status-text" class="arx-wc-status-meta">尚未开始抓包</span>
+        <span id="elapsed-text" class="arx-wc-status-meta" style="color:var(--accent);"></span>
+    </div>
+    <div id="target-info" class="arx-wc-target" style="display:none;">
+        <span class="arx-wc-target-label">目标</span>
+        <strong id="target-ssid"></strong>
+        <span id="target-bssid"></span>
+        <span style="margin-left:8px;" id="target-tool-badge"></span>
+    </div>
+    <div id="capture-stats" class="arx-wc-pills" style="display:none;">
+        <span class="badge badge-success" id="stat-eapol">EAPOL: 0</span>
+        <span class="badge badge-primary" id="stat-pmkid">PMKID: 0</span>
+        <span class="arx-wc-pcap-meta" id="pcap-size-text"></span>
+    </div>
+    <div id="wifi-status-bar" class="arx-wc-wifi-bar" style="display:none;"></div>
+</div>
+
+<!-- 操作按钮 -->
+<div class="cbi-section animate-in arx-wc-actions">
+    <button id="btn-scan" onclick="doScan()" class="cbi-button cbi-button-apply">🔍 扫描 WiFi</button>
+    <button id="btn-deauth" onclick="doDeauth()" class="cbi-button arx-wc-btn-deauth" style="display:none;">⚡ 发送 Deauth</button>
+    <button id="btn-stop" onclick="doStop()" class="cbi-button cbi-button-reset" style="display:none;">⏹ 停止抓包</button>
+    <button id="btn-download" onclick="doDownload()" class="cbi-button cbi-button-save" style="display:none;">⬇ 下载 .22000</button>
+    <button id="btn-verify" onclick="doVerify()" class="cbi-button arx-wc-btn-secondary" style="display:none;">🔬 验证质量</button>
+    <button id="btn-delete" onclick="doDelete()" class="cbi-button arx-wc-btn-delete" style="display:none;">🗑 清除</button>
+</div>
+
+<!-- 验证结果 -->
+<div id="verify-result" class="cbi-section animate-in" style="display:none;"></div>
+
+<!-- WiFi 列表 -->
+<div class="cbi-section animate-in" id="wifi-list-section" style="display:none;">
+    <div class="arx-wc-panel-head">
+        <h2 class="arx-wc-h2">周围 WiFi</h2>
+    </div>
+    <p class="arx-wc-panel-hint">点击目标网络开始抓包（仅 WPA / WPA2）。信号条颜色表示强度。</p>
+    <div id="wifi-list"></div>
+</div>
+
+<!-- 日志 -->
+<div class="cbi-section animate-in" id="log-section" style="display:none;">
+    <div class="arx-wc-panel-head">
+        <h2 class="arx-wc-h2">实时日志</h2>
+        <label class="arx-wc-log-label">
+            <input type="checkbox" id="log-autoscroll" checked> 自动滚动
+        </label>
+    </div>
+    <pre id="log-content" class="arx-wc-log-pre"></pre>
+</div>
+
+<!-- 历史记录 -->
+<div class="cbi-section animate-in">
+    <div class="arx-wc-panel-head">
+        <h2 class="arx-wc-h2">抓包历史</h2>
+        <button type="button" onclick="loadHistory()" class="cbi-button arx-wc-refresh">🔄 刷新</button>
+    </div>
+    <div id="history-list"><p class="arx-wc-empty" style="padding:12px 0;">暂无历史记录</p></div>
+</div>
+
+<script>
+(function() {
+    var statusTimer = null;
+    var isRunning = false;
+    var currentTool = 'hcxdumptool';
+    var currentBssid = '';
+
+    var TOOL_DESC = {
+        hcxdumptool: {label:'hcxdumptool', tip:'✅ 推荐：自动 PMKID + deauth，hashcat 官方推荐，成功率最高', color:'badge-success'},
+        airodump:    {label:'airodump-ng', tip:'⚠️ 经典工具：支持指定信道，可配合手动 deauth 按钮', color:'badge-primary'},
+        tcpdump:     {label:'tcpdump',     tip:'⚠️ 被动监听：系统自带，只能等待客户端自然重连，成功率低', color:''},
+    };
+
+    function safeConfirmText(s) {
+        return String(s == null ? '' : s).replace(/[\r\n\u2028\u2029]/g, ' ').replace(/"/g, "'");
+    }
+
+    // ---- 工具 ----
+    function loadTools() {
+        fetch('<%=url("admin/arx-wificrack/tools")%>?_='+Date.now())
+            .then(function(r){return r.json();})
+            .then(function(d){ currentTool=d.current||'hcxdumptool'; renderTools(d.tools||[], d.current); });
+    }
+
+    function renderTools(tools, current) {
+        var el = document.getElementById('tool-list');
+        if (!tools.length) {
+            el.innerHTML='<span style="color:var(--danger);font-size:13px;">⚠️ 未检测到抓包工具，请先安装 hcxdumptool 或 aircrack-ng</span>';
+            document.getElementById('tool-tip').style.display='none';
+            return;
+        }
+        el.innerHTML = tools.map(function(t){
+            var d = TOOL_DESC[t.id]||{label:t.name,tip:t.desc,color:''};
+            var active = t.id===current;
+            return '<button type="button" onclick="selectTool(\''+t.id+'\')" class="arx-wc-tool-btn'+(active?' is-active':'')+'">'+(active?'✓ ':'')+d.label+'</button>';
+        }).join('');
+        var d = TOOL_DESC[current]||{};
+        var tipEl = document.getElementById('tool-tip');
+        var tipText = d.tip||'';
+        tipEl.textContent = tipText;
+        tipEl.style.display = tipText.trim() ? 'block' : 'none';
+    }
+
+    window.selectTool = function(id) {
+        if (isRunning) { alert('抓包中无法切换工具'); return; }
+        var fd=new FormData(); fd.append('set',id);
+        fetch('<%=url("admin/arx-wificrack/tools")%>',{method:'POST',body:fd})
+            .then(function(r){return r.json();})
+            .then(function(d){ currentTool=d.current; renderTools(d.tools||[],d.current); });
+    };
+
+    // ---- 扫描 ----
+    window.doScan = function() {
+        if (isRunning) { alert('正在抓包中，请先停止'); return; }
+        var btn=document.getElementById('btn-scan');
+        btn.disabled=true; btn.textContent='🔄 扫描中...';
+        document.getElementById('wifi-list-section').style.display='none';
+        fetch('<%=url("admin/arx-wificrack/scan")%>?_='+Date.now())
+            .then(function(r){return r.json();})
+            .then(function(d){
+                btn.disabled=false; btn.textContent='🔍 扫描 WiFi';
+                if (d.error){alert(d.error);return;}
+                renderWifiList(d.networks||[]);
+            })
+            .catch(function(e){ btn.disabled=false; btn.textContent='🔍 扫描 WiFi'; alert('扫描失败: '+e.message); });
+    };
+
+    function renderWifiList(networks) {
+        var section=document.getElementById('wifi-list-section');
+        var list=document.getElementById('wifi-list');
+        if (!networks.length) {
+            list.innerHTML='<p class="arx-wc-empty">未发现周围 WiFi</p>';
+            section.style.display=''; return;
+        }
+        // [S1] 用 DOM 方法构建列表，彻底避免 SSID/BSSID 拼入 innerHTML/onclick 导致 XSS
+        var container = document.createElement('div');
+        container.className = 'arx-wc-wifi-stack';
+        networks.forEach(function(n) {
+            var sig=n.signal||0;
+            var sc=sig>-60?'#22c55e':sig>-75?'#f59e0b':'#ef4444';
+            var sb=sig>-60?'▂▄▆█':sig>-75?'▂▄▆_':'▂▄__';
+            var can=n.security==='WPA2'||n.security==='WPA';
+
+            var row = document.createElement('div');
+            row.className = 'arx-wc-wifi-row';
+            row.style.setProperty('--arx-sig', sc);
+
+            var left = document.createElement('div');
+            left.className = 'arx-wc-wifi-main';
+
+            var sigEl = document.createElement('span');
+            sigEl.className = 'arx-wc-signal';
+            sigEl.style.color = sc;
+            sigEl.textContent = sb;
+
+            var info = document.createElement('div');
+            var nameEl = document.createElement('div');
+            nameEl.className = 'arx-wc-wifi-title';
+            nameEl.textContent = n.ssid || '<隐藏网络>';
+            var metaEl = document.createElement('div');
+            metaEl.className = 'arx-wc-wifi-sub';
+            metaEl.textContent = (n.bssid||'') + ' · 信道 ' + (n.channel||'?') + ' · ' + sig + ' dBm';
+            info.appendChild(nameEl);
+            info.appendChild(metaEl);
+            left.appendChild(sigEl);
+            left.appendChild(info);
+
+            var right = document.createElement('div');
+            right.className = 'arx-wc-wifi-actions';
+
+            var secEl = document.createElement('span');
+            secEl.className = 'badge' + (n.security==='WPA2'?' badge-success':n.security==='WPA'?' badge-primary':'');
+            secEl.textContent = n.security||'OPEN';
+            right.appendChild(secEl);
+
+            if (can) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'cbi-button cbi-button-apply';
+                btn.textContent = '🎯 开始抓包';
+                // [S1] 通过闭包传值，不拼入 HTML
+                (function(bssid, ssid, channel) {
+                    btn.addEventListener('click', function() { doStart(bssid, ssid, channel); });
+                })(n.bssid, n.ssid||'', n.channel||0);
+                right.appendChild(btn);
+            } else {
+                var noEl = document.createElement('span');
+                noEl.style.cssText = 'font-size:12px;color:var(--text-muted);';
+                noEl.textContent = '不支持';
+                right.appendChild(noEl);
+            }
+
+            row.appendChild(left);
+            row.appendChild(right);
+            container.appendChild(row);
+        });
+        list.innerHTML = '';
+        list.appendChild(container);
+        section.style.display='';
+    }
+
+    // ---- 开始抓包 ----
+    window.doStart = function(bssid, ssid, channel) {
+        var toolName=(TOOL_DESC[currentTool]||{}).label||currentTool;
+        var timeout=document.getElementById('timeout-select').value;
+        var timeoutDesc=timeout==='0'?'不限时':Math.round(timeout/60)+' 分钟后自动停止';
+        if (!confirm('确定要对 "'+safeConfirmText(ssid)+'" 开始抓包吗？\n\n工具：'+toolName+'\n超时：'+timeoutDesc+'\n\n注意：抓包期间路由器 WiFi 可能短暂断开')) return;
+        currentBssid=bssid;
+        var fd=new FormData();
+        fd.append('bssid',bssid); fd.append('ssid',ssid);
+        fd.append('channel',channel); fd.append('tool',currentTool);
+        fd.append('timeout',timeout);
+        fetch('<%=url("admin/arx-wificrack/start")%>',{method:'POST',body:fd})
+            .then(function(r){return r.json();})
+            .then(function(d){
+                if (d.error){alert(d.error);return;}
+                document.getElementById('wifi-list-section').style.display='none';
+                document.getElementById('wifi-status-bar').style.display='none';
+                showToast(d.message);
+                startStatusPolling();
+            })
+            .catch(function(e){alert('启动失败: '+e.message);});
+    };
+
+    // ---- Deauth ----
+    window.doDeauth = function() {
+        if (!currentBssid) { alert('请先开始抓包'); return; }
+        var btn=document.getElementById('btn-deauth');
+        btn.disabled=true; btn.textContent='⚡ 发送中...';
+        var fd=new FormData();
+        fd.append('bssid',currentBssid); fd.append('count','5');
+        fetch('<%=url("admin/arx-wificrack/deauth")%>',{method:'POST',body:fd})
+            .then(function(r){return r.json();})
+            .then(function(d){
+                btn.disabled=false; btn.textContent='⚡ 发送 Deauth';
+                if (d.error){alert(d.error);return;}
+                showToast(d.message);
+            })
+            .catch(function(e){ btn.disabled=false; btn.textContent='⚡ 发送 Deauth'; });
+    };
+
+    // ---- 停止 ----
+    window.doStop = function() {
+        var btn=document.getElementById('btn-stop');
+        btn.disabled=true; btn.textContent='⏳ 停止中...';
+        fetch('<%=url("admin/arx-wificrack/stop")%>',{method:'POST'})
+            .then(function(r){return r.json();})
+            .then(function(d){
+                stopStatusPolling();
+                // 显示 WiFi 恢复状态
+                if (d.wifi_status) {
+                    var bar=document.getElementById('wifi-status-bar');
+                    bar.textContent=d.wifi_status;
+                    bar.style.background=d.wifi_status.indexOf('⚠️')>=0?'rgba(239,68,68,0.1)':'rgba(34,197,94,0.1)';
+                    bar.style.color=d.wifi_status.indexOf('⚠️')>=0?'#ef4444':'#22c55e';
+                    bar.style.display='block';
+                }
+                refreshStatus();
+                if (d.message) showToast(d.message);
+                loadHistory();
+            });
+    };
+
+    // ---- 验证质量 ----
+    window.doVerify = function() {
+        fetch('<%=url("admin/arx-wificrack/verify")%>?_='+Date.now())
+            .then(function(r){return r.json();})
+            .then(function(d){
+                var el=document.getElementById('verify-result');
+                var colors={excellent:'rgba(34,197,94,0.1)',good:'rgba(245,158,11,0.1)',empty:'rgba(239,68,68,0.1)'};
+                var borders={excellent:'#22c55e',good:'#f59e0b',empty:'#ef4444'};
+                var q=d.quality||'empty';
+                el.innerHTML='';
+                var box=document.createElement('div');
+                box.className='arx-wc-verify-box';
+                box.style.background=colors[q];
+                box.style.borderLeft='3px solid '+borders[q];
+                box.textContent=d.tip||'';
+                el.appendChild(box);
+                el.style.display='block';
+            });
+    };
+
+    window.doDownload = function() { window.location.href='<%=url("admin/arx-wificrack/download")%>'; };
+
+    window.doDelete = function() {
+        if (!confirm('确定删除当前抓包文件？')) return;
+        fetch('<%=url("admin/arx-wificrack/delete")%>',{method:'POST'})
+            .then(function(r){return r.json();})
+            .then(function(){ refreshStatus(); document.getElementById('verify-result').style.display='none'; });
+    };
+
+    // ---- 历史记录 ----
+    window.loadHistory = function() {
+        fetch('<%=url("admin/arx-wificrack/history")%>?_='+Date.now())
+            .then(function(r){return r.json();})
+            .then(function(d){ renderHistory(d.records||[]); });
+    };
+
+    function renderHistory(records) {
+        var el=document.getElementById('history-list');
+        if (!records.length) {
+            el.innerHTML='<p class="arx-wc-empty" style="padding:12px 0;">暂无历史记录</p>'; return;
+        }
+        // [S1] 用 DOM 方法构建，避免 ssid/bssid/name 拼入 innerHTML/onclick 导致 XSS
+        var stack = document.createElement('div');
+        stack.className = 'arx-wc-history-stack';
+        records.forEach(function(r) {
+            var t = r.time ? new Date(r.time*1000).toLocaleString('zh-CN') : '未知时间';
+            var row = document.createElement('div');
+            row.className = 'arx-wc-history-row';
+
+            var infoDiv = document.createElement('div');
+            var titleEl = document.createElement('div');
+            titleEl.className = 'arx-wc-history-title';
+            titleEl.textContent = r.ssid || '未知';
+            var subEl = document.createElement('div');
+            subEl.className = 'arx-wc-history-sub';
+            subEl.textContent = (r.bssid || '') + ' · ' + t;
+            infoDiv.appendChild(titleEl);
+            infoDiv.appendChild(subEl);
+
+            var actDiv = document.createElement('div');
+            actDiv.className = 'arx-wc-history-actions';
+
+            var badge = document.createElement('span');
+            if (r.eapol > 0) {
+                badge.className = 'badge badge-success';
+                badge.textContent = 'EAPOL ' + r.eapol;
+            } else if (r.pmkid > 0) {
+                badge.className = 'badge badge-primary';
+                badge.textContent = 'PMKID ' + r.pmkid;
+            } else {
+                badge.className = 'badge';
+                badge.textContent = '空';
+            }
+            actDiv.appendChild(badge);
+
+            // [S1] 通过闭包传值，不拼入 HTML 属性
+            var name = r.name || '';
+            (function(n) {
+                var btnV = document.createElement('button');
+                btnV.type = 'button'; btnV.className = 'cbi-button arx-wc-btn-secondary'; btnV.title = '验证'; btnV.textContent = '🔬';
+                btnV.addEventListener('click', function() { historyVerify(n); });
+
+                var btnD = document.createElement('button');
+                btnD.type = 'button'; btnD.className = 'cbi-button cbi-button-save'; btnD.title = '下载'; btnD.textContent = '⬇';
+                btnD.addEventListener('click', function() { historyDl(n); });
+
+                var btnR = document.createElement('button');
+                btnR.type = 'button'; btnR.className = 'cbi-button arx-wc-btn-delete'; btnR.title = '删除'; btnR.textContent = '🗑';
+                btnR.addEventListener('click', function() { historyRm(n); });
+
+                actDiv.appendChild(btnV);
+                actDiv.appendChild(btnD);
+                actDiv.appendChild(btnR);
+            })(name);
+
+            row.appendChild(infoDiv);
+            row.appendChild(actDiv);
+            stack.appendChild(row);
+        });
+        el.innerHTML = '';
+        el.appendChild(stack);
+    }
+
+    window.historyDl = function(name) {
+        window.location.href='<%=url("admin/arx-wificrack/history_dl")%>?name='+encodeURIComponent(name);
+    };
+    window.historyRm = function(name) {
+        if (!confirm('确定删除？')) return;
+        var fd=new FormData(); fd.append('name',name);
+        fetch('<%=url("admin/arx-wificrack/history_rm")%>',{method:'POST',body:fd})
+            .then(function(){loadHistory();});
+    };
+    window.historyVerify = function(name) {
+        fetch('<%=url("admin/arx-wificrack/verify")%>?file='+encodeURIComponent('/tmp/arx-wificrack/history/'+name+'.22000')+'&_='+Date.now())
+            .then(function(r){return r.json();})
+            .then(function(d){
+                var el=document.getElementById('verify-result');
+                var colors={excellent:'rgba(34,197,94,0.1)',good:'rgba(245,158,11,0.1)',empty:'rgba(239,68,68,0.1)'};
+                var borders={excellent:'#22c55e',good:'#f59e0b',empty:'#ef4444'};
+                var q=d.quality||'empty';
+                el.innerHTML='';
+                var box=document.createElement('div');
+                box.className='arx-wc-verify-box';
+                box.style.background=colors[q];
+                box.style.borderLeft='3px solid '+borders[q];
+                box.textContent=d.tip||'';
+                el.appendChild(box);
+                el.style.display='block';
+                el.scrollIntoView({behavior:'smooth'});
+            });
+    };
+
+    // ---- 状态轮询 ----
+    function refreshStatus() {
+        fetch('<%=url("admin/arx-wificrack/status")%>?_='+Date.now())
+            .then(function(r){return r.json();})
+            .then(function(d){updateUI(d);})
+            .catch(function(){});
+    }
+
+    function updateUI(d) {
+        isRunning=d.running;
+        var badge=document.getElementById('status-badge');
+        var text=document.getElementById('status-text');
+        var elapsed=document.getElementById('elapsed-text');
+        var statusPanel=document.getElementById('arx-wc-status-panel');
+        if (statusPanel) {
+            if (d.running) statusPanel.classList.add('arx-wc-status-panel--running');
+            else statusPanel.classList.remove('arx-wc-status-panel--running');
+        }
+
+        if (d.running) {
+            badge.className='badge badge-success'; badge.textContent='🔴 抓包中';
+            text.textContent='正在捕获握手包...';
+            elapsed.textContent='已运行 '+formatTime(d.elapsed||0);
+        } else {
+            badge.className='badge badge-primary'; badge.textContent='⏸ 空闲';
+            text.textContent=d.has_hash?'抓包完成':'尚未开始抓包';
+            elapsed.textContent='';
+        }
+
+        // 超时倒计时
+        var cd=document.getElementById('timeout-countdown');
+        if (d.running && d.timeout_left>=0) {
+            cd.textContent='⏱ 剩余 '+formatTime(d.timeout_left);
+        } else { cd.textContent=''; }
+
+        // 目标信息
+        if (d.target && d.target.ssid) {
+            document.getElementById('target-ssid').textContent=d.target.ssid;
+            document.getElementById('target-bssid').textContent=d.target.bssid;
+            currentBssid=d.target.bssid||'';
+            // [LOW-3] 用 DOM 方法构建 badge，不拼 innerHTML
+            var tdBadgeEl = document.getElementById('target-tool-badge');
+            tdBadgeEl.innerHTML = '';
+            var td=TOOL_DESC[d.target.tool]||{};
+            if (td.label) {
+                var sp = document.createElement('span');
+                sp.className = 'badge' + (td.color ? ' ' + td.color : '');
+                sp.textContent = td.label;
+                tdBadgeEl.appendChild(sp);
+            }
+            document.getElementById('target-info').style.display='block';
+        } else {
+            document.getElementById('target-info').style.display='none';
+        }
+
+        // 实时进度
+        if (d.running || d.has_pcap || d.has_hash) {
+            document.getElementById('stat-eapol').textContent='EAPOL: '+(d.eapol||0);
+            document.getElementById('stat-pmkid').textContent='PMKID: '+(d.pmkid||0);
+            document.getElementById('pcap-size-text').textContent=d.pcap_size?Math.round(d.pcap_size/1024)+' KB':'';
+            document.getElementById('capture-stats').style.display='flex';
+        } else {
+            document.getElementById('capture-stats').style.display='none';
+        }
+
+        // 按钮
+        document.getElementById('btn-scan').style.display     = d.running?'none':'';
+        document.getElementById('btn-stop').style.display     = d.running?'':'none';
+        document.getElementById('btn-stop').disabled          = false;
+        document.getElementById('btn-stop').textContent       = '⏹ 停止抓包';
+        // deauth 只在 airodump 模式抓包中显示
+        document.getElementById('btn-deauth').style.display   = (d.running && d.target && d.target.tool==='airodump')?'':'none';
+        document.getElementById('btn-download').style.display = d.has_hash?'':'none';
+        document.getElementById('btn-verify').style.display   = d.has_hash?'':'none';
+        document.getElementById('btn-delete').style.display   = (d.has_hash||d.has_pcap)&&!d.running?'':'none';
+
+        // 日志
+        if (d.log && d.log.trim()) {
+            document.getElementById('log-section').style.display='block';
+            var logEl=document.getElementById('log-content');
+            logEl.textContent=d.log;
+            if (document.getElementById('log-autoscroll').checked) logEl.scrollTop=logEl.scrollHeight;
+        }
+
+        // 同步工具状态
+        if (d.tools && d.tools.length && !d.running) {
+            currentTool=d.current_tool||currentTool;
+            renderTools(d.tools, currentTool);
+        }
+    }
+
+    function startStatusPolling() {
+        refreshStatus();
+        if (!statusTimer) statusTimer=setInterval(refreshStatus, 3000);
+    }
+    function stopStatusPolling() {
+        if (statusTimer){clearInterval(statusTimer);statusTimer=null;}
+    }
+    function formatTime(sec) {
+        var m=Math.floor(sec/60), s=sec%60;
+        return (m>0?m+' 分 ':'')+s+' 秒';
+    }
+    function showToast(msg) {
+        var t=document.createElement('div');
+        t.textContent=msg;
+        t.style.cssText='position:fixed;bottom:24px;right:24px;background:var(--bg-card);border:1px solid rgba(var(--primary-rgb),0.25);border-radius:var(--radius-md);padding:14px 20px;font-size:13px;line-height:1.45;z-index:9999;box-shadow:var(--shadow-lg);max-width:min(320px,92vw);';
+        document.body.appendChild(t);
+        setTimeout(function(){t.remove();},3500);
+    }
+
+    // 初始化
+    loadTools();
+    refreshStatus();
+    loadHistory();
+    startStatusPolling();
+})();
+</script>
+<%+footer%>

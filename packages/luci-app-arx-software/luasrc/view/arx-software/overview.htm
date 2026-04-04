@@ -1,0 +1,436 @@
+<%+header%>
+<div class="page-header">
+	<div class="page-title-row">
+		<h1><svg class="arx-icon" style="width:26px;height:26px;color:var(--primary-light);" aria-hidden="true"><use href="#i-package"/></svg> ARX 软件源</h1>
+		<span class="page-subtitle">切换 opkg 镜像、更新索引并进入软件包管理</span>
+	</div>
+</div>
+
+<div class="cbi-section" style="margin-bottom:1rem;">
+	<p style="margin:0 0 0.5rem 0;opacity:0.9;">
+		<strong>提示：</strong>安装插件前请确认 overlay 剩余空间充足；内核模块（kmod）必须与当前内核版本一致，否则无法安装。
+		第三方镜像可能比官方同步略慢，属正常现象。
+	</p>
+	<p style="margin:0;opacity:0.85;">
+		若 <code>opkg update</code> 失败，请查看下方日志末尾；也可在 SSH 执行 <code>logread | tail</code> 辅助排查。
+	</p>
+</div>
+
+<div class="cbi-section" id="arx-extroot-section">
+	<h3>一键 extroot（整盘 overlay 到 U 盘）</h3>
+	<p style="margin:0 0 12px 0;opacity:0.92;">
+		<strong>作用：</strong>把当前可写层 <code>/overlay</code> 迁移到<strong>已连接的 USB 磁盘分区</strong>，重启后<strong>所有软件包与配置</strong>默认写入 U 盘，相当于官方文档中的 extroot。
+		与上方「仅 opkg 备用目标」不同，这是<strong>系统级</strong>迁移。
+	</p>
+	<p style="margin:0 0 12px 0;font-size:12px;opacity:0.88;color:var(--danger, #f87171);">
+		<strong>风险：</strong>操作错误可能导致无法启动。请先备份配置；仅选择<strong>U 盘分区</strong>（本向导仅允许 <code>/dev/sd*</code> 分区，避免误选内置 eMMC）。
+		勾选「格式化」将<strong>清空该分区全部数据</strong>。
+	</p>
+	<div id="arx-extroot-precheck" class="cbi-value-field" style="font-size:13px;margin-bottom:10px;">加载中…</div>
+	<p style="margin:0 0 8px 0;font-size:12px;opacity:0.85;">当前 <code>/overlay</code> 块设备：<code id="arx-extroot-odev">—</code> · 已有 fstab 指向 /overlay：<strong id="arx-extroot-fstab">—</strong></p>
+	<div class="cbi-value-field">
+		<label for="arx-extroot-dev" style="display:block;margin-bottom:6px;">目标分区（USB）</label>
+		<select id="arx-extroot-dev" class="cbi-input-select" style="max-width:36em;">
+			<option value="">（请先插入 U 盘）</option>
+		</select>
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px;">
+		<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+			<input type="checkbox" id="arx-extroot-format" checked />
+			<span>格式化该分区为 ext4（推荐；会清空分区）</span>
+		</label>
+		<div style="font-size:11px;opacity:0.8;margin-top:4px;">不勾选时：分区须已为 ext2/3/4 且<strong>除 lost+found 外为空</strong>。</div>
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px;">
+		<label for="arx-extroot-confirm" style="display:block;margin-bottom:6px;">确认文字（需完全一致）</label>
+		<input type="text" id="arx-extroot-confirm" class="cbi-input-text" style="max-width:22em;" placeholder="确认迁移extroot" autocomplete="off" />
+	</div>
+	<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+		<button type="button" class="cbi-button cbi-button-apply" id="arx-btn-extroot">开始迁移（完成后需重启）</button>
+		<a class="cbi-button cbi-button-neutral" href="<%=url('admin/reboot')%>">前往重启</a>
+	</div>
+	<div id="arx-extroot-msg" style="margin-top:12px;font-size:13px;"></div>
+	<pre id="arx-extroot-log-out" style="display:none;margin-top:10px;overflow:auto;max-height:18em;background:var(--card-bg, #1a1a24);padding:12px;border-radius:8px;font-size:11px;"></pre>
+</div>
+
+<div class="cbi-section">
+	<h3>安装到 U 盘（opkg 备用目标）</h3>
+	<p style="margin:0 0 10px 0;opacity:0.9;">
+		<strong>说明：</strong>系统自带的「软件包」页面默认把包装进根文件系统（overlay）。
+		若希望<strong>把单个软件装到已挂载的 U 盘分区</strong>，可在此配置 <code>dest arxusb</code>，并在下方使用「安装包」或 SSH 执行
+		<code>opkg install -d arxusb &lt;包名&gt;</code>。
+		装到 U 盘的内容位于该分区下的 <code>usr/</code> 等目录，<strong>不会自动合并进当前运行根路径</strong>，适合节省内置闪存或做隔离；若要让<strong>所有</strong>插件默认都装到 U 盘，请使用 OpenWrt 的 <strong>extroot / 外置 overlay</strong>（将 <code>/overlay</code> 迁到 U 盘）。
+	</p>
+	<p style="margin:0 0 12px 0;font-size:12px;opacity:0.85;">
+		<code>/overlay</code> 设备：<span id="arx-odev">—</span>
+		<span id="arx-oclass"></span>
+		· opkg 已配置 <code>arxusb</code>：<strong id="arx-arxusb">—</strong>
+	</p>
+	<div class="cbi-value-field">
+		<label for="arx-usb-select" style="display:block;margin-bottom:6px;">检测到的 USB 挂载点</label>
+		<select id="arx-usb-select" class="cbi-input-select" style="max-width:28em;">
+			<option value="">（请选择或下方手动填写）</option>
+		</select>
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px;">
+		<label for="arx-usb-mp" style="display:block;margin-bottom:6px;">U 盘挂载路径（将写入 <code>/etc/opkg.conf</code> 中的 <code>dest arxusb</code>）</label>
+		<input type="text" id="arx-usb-mp" class="cbi-input-text" style="width:100%;max-width:42em;" placeholder="/mnt/sda1" />
+		<div style="font-size:11px;opacity:0.8;margin-top:4px;">仅允许 <code>/mnt/…</code> 或 <code>/media/…</code>。请先挂载 U 盘（<a href="<%=url('admin/services/diskman')%>">磁盘管理</a>、<a href="<%=url('admin/arx-nas/storage')%>">NAS → 存储</a> 或 系统 → 挂载点）。</div>
+	</div>
+	<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:10px;">
+		<button type="button" class="cbi-button cbi-button-apply" id="arx-btn-usb-save">保存 U 盘 opkg 目标</button>
+		<button type="button" class="cbi-button cbi-button-reset" id="arx-btn-usb-clear">清除（仅使用内置 root）</button>
+	</div>
+	<hr style="margin:18px 0;border:none;border-top:1px solid rgba(128,128,128,0.25);" />
+	<h4 style="margin:0 0 8px 0;">从此页安装单个包</h4>
+	<div class="cbi-value-field" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+		<input type="text" id="arx-pkg-name" class="cbi-input-text" style="min-width:14em;" placeholder="包名，如 luci-app-xxx" />
+		<label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+			<input type="checkbox" id="arx-pkg-usb" />
+			<span>安装到 U 盘 (<code>-d arxusb</code>)</span>
+		</label>
+		<button type="button" class="cbi-button cbi-button-save" id="arx-btn-pkg-install">安装</button>
+	</div>
+	<pre id="arx-usb-log" style="display:none;margin-top:10px;overflow:auto;max-height:12em;background:var(--card-bg, #1a1a24);padding:12px;border-radius:8px;font-size:11px;"></pre>
+</div>
+
+<div class="cbi-section">
+	<h3>当前系统</h3>
+	<div id="arx-rel" class="cbi-value-field" style="font-family:monospace;font-size:12px;">加载中…</div>
+</div>
+
+<div class="cbi-section">
+	<h3>distfeeds.conf 预览（前 10 行）</h3>
+	<pre id="arx-preview" style="overflow:auto;max-height:14em;background:var(--card-bg, #1a1a24);padding:12px;border-radius:8px;font-size:11px;">—</pre>
+</div>
+
+<div class="cbi-section">
+	<h3>镜像预设</h3>
+	<div class="cbi-value-field">
+		<label for="arx-mirror" style="display:block;margin-bottom:6px;">选择源</label>
+		<select id="arx-mirror" class="cbi-input-select">
+			<option value="tuna">清华大学（TUNA，默认）</option>
+			<option value="official">OpenWrt 官方 downloads.openwrt.org</option>
+			<option value="ustc">中国科学技术大学（USTC）</option>
+			<option value="custom">自定义 HTTPS 基础地址</option>
+		</select>
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px;">
+		<label for="arx-custom" style="display:block;margin-bottom:6px;">自定义基础 URL（仅当选择「自定义」时）</label>
+		<input type="text" id="arx-custom" class="cbi-input-text" style="width:100%;max-width:42em;"
+			placeholder="例如 https://mirrors.tuna.tsinghua.edu.cn/openwrt" />
+		<div style="font-size:11px;opacity:0.8;margin-top:4px;">须为 https，且与官方目录结构一致（替换 downloads.openwrt.org 对应段）。</div>
+	</div>
+	<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+		<button type="button" class="cbi-button cbi-button-apply" id="arx-btn-apply">应用镜像到 distfeeds</button>
+		<button type="button" class="cbi-button cbi-button-reset" id="arx-btn-restore" title="从 distfeeds.conf.bak 恢复">恢复上次备份</button>
+		<button type="button" class="cbi-button cbi-button-save" id="arx-btn-update">执行 opkg update</button>
+		<a class="cbi-button cbi-button-neutral" href="<%=url('admin/system/packages')%>">打开软件包管理</a>
+		<button type="button" class="cbi-button cbi-button-neutral" id="arx-btn-probe">检测镜像可达性</button>
+		<span style="font-size:11px;opacity:0.85;margin-left:8px;">若无法打开，请从侧栏菜单进入 <strong>系统 → 软件包</strong>（部分版本路径可能为 package-manager）。</span>
+	</div>
+	<div id="arx-probe-out" style="margin-top:10px;font-size:12px;color:var(--text-secondary);"></div>
+	<div id="arx-msg" style="margin-top:12px;font-size:13px;"></div>
+	<pre id="arx-log" style="display:none;margin-top:10px;overflow:auto;max-height:16em;background:var(--card-bg, #1a1a24);padding:12px;border-radius:8px;font-size:11px;"></pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+	var base = '<%=url("admin/system/arx-software")%>';
+	function qs(s) { return document.querySelector(s); }
+	function setMsg(html, isErr) {
+		var el = qs('#arx-msg');
+		var cls = isErr ? 'arx-inline-status arx-inline-status--danger' : 'arx-inline-status arx-inline-status--success';
+		el.innerHTML = '<span class="' + cls + '">' + html + '</span>';
+		el.style.color = '';
+	}
+	function showLog(text) {
+		var pre = qs('#arx-log');
+		if (!text) { pre.style.display = 'none'; pre.textContent = ''; return; }
+		pre.style.display = 'block';
+		pre.textContent = text;
+	}
+	function showUsbLog(text) {
+		var pre = qs('#arx-usb-log');
+		if (!text) { pre.style.display = 'none'; pre.textContent = ''; return; }
+		pre.style.display = 'block';
+		pre.textContent = text;
+	}
+	function setExtrootMsg(html, isErr) {
+		var el = qs('#arx-extroot-msg');
+		if (!el) return;
+		el.innerHTML = html;
+		el.style.color = isErr ? 'var(--danger, #f87171)' : 'var(--success, #4ade80)';
+	}
+	function showExtrootLog(text) {
+		var pre = qs('#arx-extroot-log-out');
+		if (!pre) return;
+		if (!text) { pre.style.display = 'none'; pre.textContent = ''; return; }
+		pre.style.display = 'block';
+		pre.textContent = text;
+	}
+	function loadExtroot() {
+		fetch(base + '/extroot_status', { credentials: 'same-origin' })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				var pc = qs('#arx-extroot-precheck');
+				if (d.precheck_ok) {
+					pc.innerHTML = '<span style="color:var(--success,#4ade80)">依赖检查通过（mkfs.ext4 / blkid / tar）。</span>';
+				} else {
+					pc.innerHTML = '<span style="color:var(--danger,#f87171)">依赖未满足。请确认固件已含 e2fsprogs、blkid、block-mount、kmod-fs-ext4 等。</span>';
+				}
+				qs('#arx-extroot-odev').textContent = d.overlay_device || '—';
+				qs('#arx-extroot-fstab').textContent = d.fstab_has_overlay ? '是' : '否';
+				var sel = qs('#arx-extroot-dev');
+				while (sel.options.length > 1) sel.remove(1);
+				(d.usb_partitions || []).forEach(function(p) {
+					var o = document.createElement('option');
+					o.value = p.device;
+					o.textContent = p.device + (p.size ? '  (' + p.size + ')' : '');
+					sel.appendChild(o);
+				});
+			})
+			.catch(function() {
+				var pc = qs('#arx-extroot-precheck');
+				if (pc) pc.textContent = '无法加载 extroot 状态';
+			});
+	}
+	function loadStatus() {
+		fetch(base + '/status', { credentials: 'same-origin' })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				var rel = d.release || {};
+				qs('#arx-rel').textContent =
+					'DISTRIB_RELEASE=' + (rel.DISTRIB_RELEASE || '—') +
+					'  DISTRIB_TARGET=' + (rel.DISTRIB_TARGET || '—') +
+					'  DISTRIB_ARCH=' + (rel.DISTRIB_ARCH || '—') +
+					'  · 检测到的源=' + (d.detected || '—') +
+					(d.backup_exists ? '  · 已有备份' : '  · 尚无备份');
+				qs('#arx-preview').textContent = (d.distfeeds_preview || []).join('\n') || '（空）';
+				var m = d.uci_mirror || 'tuna';
+				qs('#arx-mirror').value = (m === 'custom' || m === 'tuna' || m === 'ustc' || m === 'official') ? m : 'custom';
+				qs('#arx-custom').value = d.custom_base || '';
+
+				qs('#arx-odev').textContent = d.overlay_device || '—';
+				var oc = d.overlay_class === 'usb_like' ? '（疑似外置 USB 存储上的 overlay）' :
+					(d.overlay_class === 'internal_or_other' ? '（内置或其它存储）' : '');
+				qs('#arx-oclass').textContent = oc;
+				qs('#arx-arxusb').textContent = d.opkg_arxusb_configured ? '是' : '否';
+				var sel = qs('#arx-usb-select');
+				while (sel.options.length > 1) sel.remove(1);
+				(d.usb_mount_candidates || []).forEach(function(c) {
+					var o = document.createElement('option');
+					o.value = c.mount;
+					o.textContent = c.mount + '  ← ' + c.device + ' (' + c.fstype + ')';
+					sel.appendChild(o);
+				});
+				var ump = d.uci_usb_mountpoint || '';
+				qs('#arx-usb-mp').value = ump;
+				if (ump) {
+					var found = false;
+					for (var i = 0; i < sel.options.length; i++) {
+						if (sel.options[i].value === ump) {
+							sel.selectedIndex = i;
+							found = true;
+							break;
+						}
+					}
+					if (!found) sel.selectedIndex = 0;
+				} else {
+					sel.selectedIndex = 0;
+				}
+			})
+			.catch(function() {
+				setMsg('无法加载状态', true);
+			});
+	}
+	function post(path, body) {
+		var fd = new FormData();
+		if (body) {
+			for (var k in body) {
+				if (body[k] !== undefined && body[k] !== null)
+					fd.append(k, body[k]);
+			}
+		}
+		return fetch(base + path, { method: 'POST', credentials: 'same-origin', body: fd });
+	}
+	qs('#arx-btn-apply').onclick = function() {
+		setMsg('正在写入…', false);
+		showLog('');
+		var mirror = qs('#arx-mirror').value;
+		var custom = qs('#arx-custom').value.trim();
+		post('/apply', { mirror: mirror, custom_base: custom })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				if (d.ok) {
+					setMsg('已应用并写入 UCI。建议随后执行「opkg update」。', false);
+					showLog('');
+					loadStatus();
+				} else {
+					setMsg(d.error || '失败', true);
+					showLog(d.log || '');
+				}
+			})
+			.catch(function() { setMsg('请求失败', true); });
+	};
+	qs('#arx-btn-restore').onclick = function() {
+		if (!confirm('确定从 distfeeds.conf.bak 覆盖当前配置？')) return;
+		setMsg('正在恢复…', false);
+		showLog('');
+		post('/restore', {})
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				if (d.ok) {
+					setMsg('已从备份恢复。', false);
+					loadStatus();
+				} else {
+					setMsg(d.error || '恢复失败', true);
+					showLog(d.log || '');
+				}
+			})
+			.catch(function() { setMsg('请求失败', true); });
+	};
+	qs('#arx-usb-select').onchange = function() {
+		var v = qs('#arx-usb-select').value;
+		if (v) qs('#arx-usb-mp').value = v;
+	};
+	qs('#arx-btn-usb-save').onclick = function() {
+		setMsg('正在保存 U 盘 opkg 目标…', false);
+		showUsbLog('');
+		var mp = qs('#arx-usb-mp').value.trim().replace(/\/+$/, '');
+		post('/usb_dest_apply', { usb_mountpoint: mp })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				if (d.ok) {
+					setMsg('已保存。使用 U 盘安装时请勾选「安装到 U 盘」或执行 opkg install -d arxusb …', false);
+					loadStatus();
+				} else {
+					setMsg(d.error || '保存失败', true);
+					showUsbLog(d.log || '');
+				}
+			})
+			.catch(function() { setMsg('请求失败', true); });
+	};
+	qs('#arx-btn-usb-clear').onclick = function() {
+		if (!confirm('确定清除 arxusb 目标？')) return;
+		qs('#arx-usb-mp').value = '';
+		qs('#arx-usb-select').selectedIndex = 0;
+		setMsg('正在清除…', false);
+		showUsbLog('');
+		post('/usb_dest_apply', { usb_mountpoint: '' })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				if (d.ok) {
+					setMsg('已清除 U 盘 opkg 目标。', false);
+					loadStatus();
+				} else {
+					setMsg(d.error || '失败', true);
+					showUsbLog(d.log || '');
+				}
+			})
+			.catch(function() { setMsg('请求失败', true); });
+	};
+	qs('#arx-btn-pkg-install').onclick = function() {
+		var pkg = qs('#arx-pkg-name').value.trim();
+		if (!pkg) { setMsg('请填写包名', true); return; }
+		setMsg('正在执行 opkg install…', false);
+		showUsbLog('');
+		qs('#arx-btn-pkg-install').disabled = true;
+		post('/opkg_install', { pkg: pkg, to_usb: qs('#arx-pkg-usb').checked ? '1' : '0' })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				qs('#arx-btn-pkg-install').disabled = false;
+				if (d.ok) {
+					setMsg('安装命令已执行完成。', false);
+				} else {
+					var sm = d.summary ? (' ' + d.summary) : '';
+					setMsg((d.error || '安装失败') + sm, true);
+				}
+				showUsbLog(d.log || '');
+			})
+			.catch(function() {
+				qs('#arx-btn-pkg-install').disabled = false;
+				setMsg('请求失败', true);
+			});
+	};
+	qs('#arx-btn-update').onclick = function() {
+		setMsg('正在执行 opkg update，请稍候…', false);
+		showLog('');
+		qs('#arx-btn-update').disabled = true;
+		post('/opkg_update', {})
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				qs('#arx-btn-update').disabled = false;
+				if (d.ok) {
+					setMsg('opkg update 完成。', false);
+				} else {
+					var sm = d.summary ? (' ' + d.summary) : '';
+					setMsg('opkg update 失败（见下方日志）' + sm, true);
+				}
+				showLog(d.log || '');
+			})
+			.catch(function() {
+				qs('#arx-btn-update').disabled = false;
+				setMsg('请求失败', true);
+			});
+	};
+	qs('#arx-btn-extroot').onclick = function() {
+		if (qs('#arx-extroot-confirm').value.trim() !== '确认迁移extroot') {
+			setExtrootMsg('请在确认框输入：<strong>确认迁移extroot</strong>（完全一致）', true);
+			return;
+		}
+		var dev = qs('#arx-extroot-dev').value;
+		if (!dev) {
+			setExtrootMsg('请选择 U 盘分区。', true);
+			return;
+		}
+		if (!confirm('即将把 /overlay 迁移到 ' + dev + '。请勿断电。是否继续？')) return;
+		setExtrootMsg('正在迁移，请耐心等待…', false);
+		showExtrootLog('');
+		qs('#arx-btn-extroot').disabled = true;
+		post('/extroot_apply', {
+			confirm: '确认迁移extroot',
+			device: dev,
+			format: qs('#arx-extroot-format').checked ? '1' : '0'
+		})
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				qs('#arx-btn-extroot').disabled = false;
+				if (d.ok) {
+					setExtrootMsg('迁移完成，请<strong>尽快重启</strong>路由器使 extroot 生效。', false);
+					showExtrootLog(d.log || '');
+					loadExtroot();
+				} else {
+					setExtrootMsg(d.error || '失败', true);
+					showExtrootLog(d.log || '');
+				}
+			})
+			.catch(function() {
+				qs('#arx-btn-extroot').disabled = false;
+				setExtrootMsg('请求失败', true);
+			});
+	};
+	var probeEl = qs('#arx-btn-probe');
+	var probeOut = qs('#arx-probe-out');
+	if (probeEl && probeOut) {
+		probeEl.onclick = function() {
+			probeOut.textContent = '正在检测…';
+			fetch(base + '/probe_mirrors', { credentials: 'same-origin' })
+				.then(function(r) { return r.json(); })
+				.then(function(d) {
+					var ms = d.mirrors || [];
+					var parts = [];
+					ms.forEach(function(x) {
+						parts.push(x.id + ': ' + (x.ok ? '可达' : '不可达'));
+					});
+					probeOut.textContent = parts.join(' · ') || '无结果';
+				})
+				.catch(function() { probeOut.textContent = '检测失败（需 uclient-fetch 或 wget）'; });
+		};
+	}
+	loadStatus();
+	loadExtroot();
+})();
+</script>
+
+<%+footer%>

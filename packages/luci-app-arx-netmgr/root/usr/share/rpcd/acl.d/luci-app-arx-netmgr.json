@@ -1,0 +1,18 @@
+{
+    "arx-netmgr": {
+        "description": "ARX3000M Network & Device Manager",
+        "read": {
+            "uci": [ "arx-netmgr" ],
+            "file": {
+                "/tmp/dhcp.leases": [ "read" ],
+                "/tmp/blocklist_dhcp": [ "read" ]
+            }
+        },
+        "write": {
+            "uci": [ "arx-netmgr" ],
+            "file": {
+                "/tmp/blocklist_dhcp": [ "write" ]
+            }
+        }
+    }
+}

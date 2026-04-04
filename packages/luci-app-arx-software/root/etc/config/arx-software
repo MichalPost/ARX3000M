@@ -1,0 +1,6 @@
+package arx-software
+
+config main
+	option mirror 'tuna'
+	option custom_base ''
+	option usb_mountpoint ''

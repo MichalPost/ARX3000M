@@ -1,0 +1,439 @@
+<%
+local uci = require "luci.model.uci".cursor()
+local function dashopt(k, d)
+	local v = uci:get("arx-dashboard", "main", k)
+	if v == nil or v == "" then return d end
+	return v
+end
+local function numopt(k, d, minv, maxv)
+	local n = tonumber(dashopt(k, tostring(d))) or d
+	if not n then n = d end
+	if n < minv then n = minv end
+	if n > maxv then n = maxv end
+	return n
+end
+local pr = numopt("poll_realtime_sec", 10, 3, 300)
+local pl = numopt("poll_logs_sec", 20, 5, 600)
+local ps = numopt("poll_services_sec", 45, 10, 3600)
+local pd = numopt("poll_disk_sec", 90, 30, 7200)
+local ph = numopt("poll_hero_devices_sec", 45, 15, 3600)
+local vp = dashopt("visibility_pause", "1") == "1"
+local hm = numopt("hidden_poll_multiplier", 3, 1, 10)
+local dheavy = numopt("defer_heavy_ms", 1500, 0, 60000)
+local nixio = require "nixio"
+local has_wificrack = nixio.fs.access("/usr/lib/lua/luci/controller/arx_wificrack.lua")
+css = { "arx-dashboard/css/dashboard.css" }
+%>
+<%+header%>
+<script>
+window.ARX_DASH_CFG = {
+	pollRealtime: <%= pr %>,
+	pollLogs: <%= pl %>,
+	pollServices: <%= ps %>,
+	pollDisk: <%= pd %>,
+	pollHeroDevices: <%= ph %>,
+	visibilityPause: <%= vp and "true" or "false" %>,
+	hiddenMult: <%= hm %>,
+	deferHeavyMs: <%= dheavy %>
+};
+window.ARX_DASH_URLS = {
+	devices_json: "<%=url('admin/arx-netmgr/devices_json')%>",
+	network_health: "<%=url('admin/arx-dashboard/network_health')%>",
+	system_info: "<%=url('admin/arx-dashboard/system_info')%>",
+	network_stats: "<%=url('admin/arx-dashboard/network_stats')%>",
+	disk_usage: "<%=url('admin/arx-dashboard/disk_usage')%>",
+	processes: "<%=url('admin/arx-dashboard/processes')%>",
+	services: "<%=url('admin/arx-dashboard/services')%>",
+	fw_status: "<%=url('admin/arx-dashboard/fw_status')%>",
+	logs: "<%=url('admin/arx-dashboard/logs')%>",
+	realtime: "<%=url('admin/arx-dashboard/realtime')%>",
+	mwan_status: "<%=url('admin/arx-dashboard/mwan_status')%>",
+	ipv6_status: "<%=url('admin/arx-dashboard/ipv6_status')%>",
+	mesh_status: "<%=url('admin/arx-dashboard/mesh_status')%>",
+	wifi_env: "<%=url('admin/arx-dashboard/wifi_env')%>",
+	service_action: "<%=url('admin/arx-dashboard/service_action')%>"
+};
+</script>
+<div class="page-header">
+    <div class="page-title-row">
+        <h1><span class="live-dot"></span> 系统仪表盘</h1>
+        <span class="page-subtitle">ARX3000M 实时系统状态总览</span>
+    </div>
+</div>
+
+<div class="dash-speed-gauge animate-in" id="dash-speed-gauge" aria-label="实时网速 Mbps">
+    <div class="dash-speed-gauge__inner">
+        <svg class="dash-speed-gauge__svg" viewBox="0 0 320 124" aria-hidden="true">
+            <defs>
+                <linearGradient id="arx-grad-down" x1="0%" y1="100%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#22c55e"/>
+                    <stop offset="55%" stop-color="#38bdf8"/>
+                    <stop offset="100%" stop-color="#818cf8"/>
+                </linearGradient>
+                <linearGradient id="arx-grad-up" x1="0%" y1="100%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#f59e0b"/>
+                    <stop offset="50%" stop-color="#f97316"/>
+                    <stop offset="100%" stop-color="#ef4444"/>
+                </linearGradient>
+            </defs>
+            <g transform="translate(80,102)">
+                <path class="dash-gauge__track" d="M -58 0 A 58 58 0 0 1 58 0" fill="none" stroke="var(--border-color, rgba(148,163,184,0.35))" stroke-width="9"/>
+                <path id="dash-gauge-rx-arc" d="M -58 0 A 58 58 0 0 1 58 0" fill="none" stroke="url(#arx-grad-down)" stroke-width="9" stroke-linecap="round" stroke-dasharray="182.2 182.2" stroke-dashoffset="182.2"/>
+            </g>
+            <g transform="translate(240,102)">
+                <path class="dash-gauge__track" d="M -58 0 A 58 58 0 0 1 58 0" fill="none" stroke="var(--border-color, rgba(148,163,184,0.35))" stroke-width="9"/>
+                <path id="dash-gauge-tx-arc" d="M -58 0 A 58 58 0 0 1 58 0" fill="none" stroke="url(#arx-grad-up)" stroke-width="9" stroke-linecap="round" stroke-dasharray="182.2 182.2" stroke-dashoffset="182.2"/>
+            </g>
+        </svg>
+        <div class="dash-speed-gauge__labels">
+            <div class="dash-speed-gauge__col">
+                <span class="dash-speed-gauge__cap">下行</span>
+                <span class="dash-speed-gauge__mbps" id="dash-gauge-rx-mbps">0.00</span>
+                <span class="dash-speed-gauge__unit">Mbps</span>
+            </div>
+            <div class="dash-speed-gauge__col">
+                <span class="dash-speed-gauge__cap">上行</span>
+                <span class="dash-speed-gauge__mbps" id="dash-gauge-tx-mbps">0.00</span>
+                <span class="dash-speed-gauge__unit">Mbps</span>
+            </div>
+        </div>
+        <p class="dash-speed-gauge__hint">各非回环接口聚合 · 量程 <span id="dash-gauge-max-label">1000</span> Mbps</p>
+    </div>
+</div>
+
+<div class="dash-hero" id="dash-hero" aria-label="概览">
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">主机名</span>
+        <span class="dash-hero__value" id="hero-hostname">—</span>
+    </div>
+    <div class="dash-hero__sep" aria-hidden="true"></div>
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">在线设备</span>
+        <span class="dash-hero__value" id="hero-devices">—</span>
+    </div>
+    <div class="dash-hero__sep" aria-hidden="true"></div>
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">WAN</span>
+        <span class="dash-hero__value" id="hero-wan">—</span>
+    </div>
+</div>
+
+<div class="dash-hero dash-hero--health" id="dash-health" aria-label="网络健康">
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">DDNS</span>
+        <span class="dash-hero__value" id="hero-ddns">—</span>
+    </div>
+    <div class="dash-hero__sep" aria-hidden="true"></div>
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">SmartDNS</span>
+        <span class="dash-hero__value" id="hero-smartdns">—</span>
+    </div>
+    <div class="dash-hero__sep" aria-hidden="true"></div>
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">AdGuard</span>
+        <span class="dash-hero__value" id="hero-adg">—</span>
+    </div>
+    <div class="dash-hero__sep qa-health-sep" aria-hidden="true"></div>
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">OpenClash</span>
+        <span class="dash-hero__value" id="hero-oc">—</span>
+    </div>
+    <div class="dash-hero__sep qa-health-sep" aria-hidden="true"></div>
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">PassWall</span>
+        <span class="dash-hero__value" id="hero-pw">—</span>
+    </div>
+</div>
+
+<div class="dash-hero dash-hero--health dash-hero--extra" id="dash-mwan-hero" aria-label="多 WAN">
+    <div class="dash-hero__item" style="flex:1 1 220px">
+        <span class="dash-hero__label">默认出口</span>
+        <span class="dash-hero__value" id="hero-mwan">—</span>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;max-width:42rem" id="hero-mwan-sub"></div>
+    </div>
+    <div class="dash-hero__sep" aria-hidden="true"></div>
+    <div class="dash-hero__item">
+        <span class="dash-hero__label">mwan3</span>
+        <span class="dash-hero__value" id="hero-mwan-pol" style="font-size:13px">—</span>
+    </div>
+</div>
+
+<div class="quick-actions-wrap">
+<div class="quick-actions" id="quick-actions-main">
+    <a href="<%=url('admin/services/openclash')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--signal"><svg class="arx-icon" aria-hidden="true"><use href="#i-rocket"/></svg></div><span class="qa-label">OpenClash</span>
+    </a>
+    <a href="<%=url('admin/services/passwall')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-orbit"/></svg></div><span class="qa-label">PassWall</span>
+    </a>
+    <a href="<%=url('admin/network/wireless')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-wifi"/></svg></div><span class="qa-label">WiFi 设置</span>
+    </a>
+    <a href="<%=url('admin/arx-dashboard/wifi_rssi')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--accent"><svg class="arx-icon" aria-hidden="true"><use href="#i-wifi"/></svg></div><span class="qa-label">无线信号</span>
+    </a>
+    <a href="<%=url('admin/network/firewall')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-shield"/></svg></div><span class="qa-label">防火墙</span>
+    </a>
+    <a href="<%=url('admin/services/adguardhome')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-shield-check"/></svg></div><span class="qa-label">AdGuard</span>
+    </a>
+    <a href="<%=url('admin/services/smartdns')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--accent"><svg class="arx-icon" aria-hidden="true"><use href="#i-globe"/></svg></div><span class="qa-label">SmartDNS</span>
+    </a>
+    <a href="<%=url('admin/arx-netmgr/devices')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-antenna"/></svg></div><span class="qa-label">设备管理</span>
+    </a>
+    <a href="<%=url('admin/services/diskman')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--accent"><svg class="arx-icon" aria-hidden="true"><use href="#i-disc"/></svg></div><span class="qa-label">磁盘管理</span>
+    </a>
+    <a href="<%=url('admin/services/banip')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--danger"><svg class="arx-icon" aria-hidden="true"><use href="#i-ban"/></svg></div><span class="qa-label">BanIP</span>
+    </a>
+    <a href="<%=url('admin/system/reboot')%>" class="quick-action-btn" onclick="return confirm('确定要重启路由器吗？');">
+        <div class="qa-icon qa-icon--danger"><svg class="arx-icon" aria-hidden="true"><use href="#i-refresh-cw"/></svg></div><span class="qa-label">重启系统</span>
+    </a>
+    <a href="<%=url('admin/arx-dashboard/recovery')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-file-text"/></svg></div><span class="qa-label">恢复说明</span>
+    </a>
+    <a href="<%=url('admin/arx-dashboard/dns_chain')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--accent"><svg class="arx-icon" aria-hidden="true"><use href="#i-globe"/></svg></div><span class="qa-label">DNS 解析链</span>
+    </a>
+</div>
+<button type="button" class="quick-actions-expand" id="quick-actions-expand" aria-expanded="false" aria-controls="quick-actions-main">更多快捷方式</button>
+</div>
+
+<div class="status-grid" id="status-grid">
+    <div class="status-card animate-in" data-src="<%=url('admin/arx-dashboard/realtime')%>">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-activity"/></svg></div>
+            <div class="card-label">CPU 使用率</div>
+        </div>
+        <div class="card-value-row">
+            <span class="card-value"><span id="cpu-value">--</span></span>
+            <span class="card-unit">%</span>
+        </div>
+        <div class="progress-bar fill-warning"><div class="fill" id="cpu-bar" style="width:0%"></div></div>
+        <div class="card-sub" id="cpu-sub">加载中...</div>
+        <div class="card-hint" id="cpu-hint" role="note"></div>
+        <div class="arx-sparkline-wrap" aria-hidden="true">
+            <div class="arx-sparkline-meta"><span>CPU %</span><span>约 60 秒</span></div>
+            <svg class="arx-sparkline" id="cpu-spark-svg" viewBox="0 0 100 32" preserveAspectRatio="none">
+                <line class="arx-sparkline__grid" x1="0" y1="24" x2="100" y2="24"/>
+                <polygon class="arx-sparkline__fill" id="cpu-spark-fill" points="0,32 0,32 100,32 100,32"/>
+                <polyline class="arx-sparkline__line" id="cpu-spark-line" points="0,16 100,16"/>
+            </svg>
+        </div>
+    </div>
+    <div class="status-card animate-in" data-src="<%=url('admin/arx-dashboard/realtime')%>">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-hard-drive"/></svg></div>
+            <div class="card-label">内存使用</div>
+        </div>
+        <div class="card-value-row">
+            <span class="card-value"><span id="mem-value">--</span></span>
+            <span class="card-unit">MB</span>
+        </div>
+        <div class="progress-bar"><div class="fill" id="mem-bar" style="width:0%"></div></div>
+        <div class="card-sub" id="mem-sub">加载中...</div>
+        <div class="card-hint" id="mem-hint" role="note"></div>
+    </div>
+    <div class="status-card animate-in" data-src="<%=url('admin/arx-dashboard/realtime')%>">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-globe"/></svg></div>
+            <div class="card-label">网络流量</div>
+        </div>
+        <div class="card-value-row" id="net-value">--</div>
+        <div class="progress-bar fill-success"><div class="fill" id="net-bar" style="width:0%"></div></div>
+        <div class="card-sub" id="net-sub">↓ 接收 · ↑ 发送</div>
+        <div class="card-hint" id="net-hint" role="note"></div>
+        <div class="arx-sparkline-wrap" aria-hidden="true">
+            <div class="arx-sparkline-meta"><span>总吞吐趋势</span><span>约 60 秒</span></div>
+            <svg class="arx-sparkline arx-sparkline--net" id="net-spark-svg" viewBox="0 0 100 32" preserveAspectRatio="none">
+                <line class="arx-sparkline__grid" x1="0" y1="24" x2="100" y2="24"/>
+                <polygon class="arx-sparkline__fill" id="net-spark-fill" points="0,32 0,32 100,32 100,32"/>
+                <polyline class="arx-sparkline__line" id="net-spark-line" points="0,16 100,16"/>
+            </svg>
+        </div>
+    </div>
+    <div class="status-card animate-in" data-src="<%=url('admin/arx-dashboard/realtime')%>">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-thermometer"/></svg></div>
+            <div class="card-label">SoC 温度</div>
+        </div>
+        <div class="card-value-row">
+            <span class="card-value"><span id="temp-value">--</span></span>
+            <span class="card-unit">°C</span>
+        </div>
+        <div class="progress-bar fill-danger"><div class="fill" id="temp-bar" style="width:0%"></div></div>
+        <div class="card-sub" id="temp-sub">芯片温度</div>
+        <div class="card-hint" id="temp-hint" role="note"></div>
+    </div>
+    <div class="status-card animate-in">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-clock"/></svg></div>
+            <div class="card-label">运行时间</div>
+        </div>
+        <div class="card-value-row">
+            <span class="card-value" id="uptime-value">--</span>
+        </div>
+        <div class="card-sub" id="uptime-sub">系统启动时间</div>
+    </div>
+    <div class="status-card animate-in" data-src="<%=url('admin/arx-dashboard/disk_usage')%>">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-folder"/></svg></div>
+            <div class="card-label">磁盘空间</div>
+        </div>
+        <div class="card-value-row">
+            <span class="card-value"><span id="disk-value">--</span></span>
+            <span class="card-unit">MB</span>
+        </div>
+        <div class="progress-bar fill-warning"><div class="fill" id="disk-bar" style="width:0%"></div></div>
+        <div class="card-sub" id="disk-sub">加载中...</div>
+        <div class="card-hint" id="disk-hint" role="note"></div>
+    </div>
+</div>
+
+<div class="dashboard-columns animate-in">
+    <div class="dash-col">
+        <div class="cbi-section">
+            <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-file-text"/></svg>系统信息</h2>
+            <div class="firmware-card animate-in" id="firmware-card">
+                <div class="fw-card-header">
+                    <div class="fw-card-badge" id="fw-platform">MT7981B</div>
+                    <span class="fw-card-title" id="fw-model">RAX3000M</span>
+                </div>
+                <div class="fw-card-grid">
+                    <div class="fw-cell">
+                        <span class="fw-cell-label">固件版本</span>
+                        <span class="fw-cell-value fw-mono" id="fw-version">—</span>
+                    </div>
+                    <div class="fw-cell">
+                        <span class="fw-cell-label">OpenWrt</span>
+                        <span class="fw-cell-value" id="fw-openwrt">—</span>
+                    </div>
+                    <div class="fw-cell">
+                        <span class="fw-cell-label">内核版本</span>
+                        <span class="fw-cell-value fw-mono" id="fw-kernel">—</span>
+                    </div>
+                    <div class="fw-cell">
+                        <span class="fw-cell-label">编译日期</span>
+                        <span class="fw-cell-value" id="fw-builddate">—</span>
+                    </div>
+                </div>
+                <div class="fw-card-footer">
+                    <div class="fw-overlay-summary" id="fw-overlay-free">剩余空间 —</div>
+                    <div class="fw-disk-bar-wrap">
+                        <span class="fw-disk-label">Overlay 已用</span>
+                        <div class="fw-disk-bar"><div class="fw-disk-fill" id="fw-disk-fill"></div></div>
+                        <span class="fw-disk-pct" id="fw-disk-pct">—%</span>
+                    </div>
+                </div>
+            </div>
+            <div class="info-list" id="sysinfo-list">
+                <div style="padding:20px;">
+                    <div class="arx-skeleton arx-skeleton--title"></div>
+                    <div class="arx-skeleton arx-skeleton--row"></div>
+                    <div class="arx-skeleton arx-skeleton--row" style="width:88%"></div>
+                    <div class="arx-skeleton arx-skeleton--row" style="width:72%"></div>
+                </div>
+            </div>
+        </div>
+        <div class="cbi-section">
+            <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-wifi"/></svg>网络接口</h2>
+            <div class="table-wrap">
+            <table id="iface-table">
+                <thead><tr><th>接口</th><th>IPv4 地址</th><th>MAC</th><th>RX</th><th>TX</th></tr></thead>
+                <tbody><tr><td colspan="5" style="padding:16px;"><div class="arx-skeleton arx-skeleton--row"></div><div class="arx-skeleton arx-skeleton--row" style="width:90%;margin-top:10px"></div><div class="arx-skeleton arx-skeleton--row" style="width:75%;margin-top:10px"></div></td></tr></tbody>
+            </table>
+            </div>
+        </div>
+        <div class="cbi-section">
+            <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-settings"/></svg>进程 TOP 10</h2>
+            <div id="process-list">
+                <div style="padding:16px;">
+                    <div class="arx-skeleton arx-skeleton--row"></div>
+                    <div class="arx-skeleton arx-skeleton--row" style="width:92%;margin-top:8px"></div>
+                    <div class="arx-skeleton arx-skeleton--row" style="width:80%;margin-top:8px"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="dash-col">
+        <div class="cbi-section">
+            <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-wrench"/></svg>服务状态</h2>
+            <ul class="service-list" id="service-list">
+                <li style="padding:12px 16px;">
+                    <div class="arx-skeleton arx-skeleton--block" style="height:36px;margin:0"></div>
+                </li>
+            </ul>
+        </div>
+        <div class="cbi-section">
+            <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-shield"/></svg>防火墙状态</h2>
+            <div class="fw-mini-grid" id="fw-status">
+                <div class="mini-card">
+                    <div class="mini-icon mini-icon--success"><svg class="arx-icon" aria-hidden="true"><use href="#i-check"/></svg></div>
+                    <div class="mini-info">
+                        <div class="mini-label">INPUT 链规则</div>
+                        <div class="mini-value" id="fw-input">--</div>
+                    </div>
+                </div>
+                <div class="mini-card">
+                    <div class="mini-icon mini-icon--primary"><svg class="arx-icon" aria-hidden="true"><use href="#i-arrow-left-right"/></svg></div>
+                    <div class="mini-info">
+                        <div class="mini-label">FORWARD 链规则</div>
+                        <div class="mini-value" id="fw-forward">--</div>
+                    </div>
+                </div>
+                <div class="mini-card">
+                    <div class="mini-icon mini-icon--accent"><svg class="arx-icon" aria-hidden="true"><use href="#i-arrow-up"/></svg></div>
+                    <div class="mini-info">
+                        <div class="mini-label">NAT 转发规则</div>
+                        <div class="mini-value" id="fw-nat">--</div>
+                    </div>
+                </div>
+                <div class="mini-card">
+                    <div class="mini-icon mini-icon--warning"><svg class="arx-icon" aria-hidden="true"><use href="#i-activity"/></svg></div>
+                    <div class="mini-info">
+                        <div class="mini-label">SFE 硬件加速</div>
+                        <div class="mini-value" id="fw-sfe">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="cbi-section">
+            <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-scroll-text"/></svg>最近日志</h2>
+            <div class="log-viewer" id="log-viewer" style="max-height:260px;">
+                <div style="padding:16px;">
+                    <div class="arx-skeleton arx-skeleton--text"></div>
+                    <div class="arx-skeleton arx-skeleton--text" style="width:95%"></div>
+                    <div class="arx-skeleton arx-skeleton--text" style="width:85%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="dash-subpanel-wrap" style="margin-top:18px">
+    <details class="dash-subpanel" open>
+        <summary>IPv6 状态（红绿灯为启发式）</summary>
+        <div class="ipv6-grid" id="dash-ipv6-summary"></div>
+        <p class="subpanel-body" style="margin-top:8px">有地址但不通时，请查防火墙、上游 PD、NDP。详见 <a href="https://openwrt.org/docs/guide-user/network/ipv6/start" target="_blank" rel="noopener">OpenWrt IPv6 文档</a>。</p>
+    </details>
+    <details class="dash-subpanel">
+        <summary>WiFi 环境与信道（只读）</summary>
+        <div class="subpanel-body" id="dash-wifi-env-body">加载中…</div>
+        <p class="subpanel-body">需要扫描周边 AP 时，可前往 <a href="<%=url('admin/network/wireless')%>">无线设置</a><% if has_wificrack then %> 或 <a href="<%=url('admin/arx-wificrack/capture')%>">WiFi 抓包工具</a><% end %>（扫描可能导致 AP 短暂卡顿）。</p>
+    </details>
+    <details class="dash-subpanel">
+        <summary>Mesh / 中继</summary>
+        <div id="dash-mesh-summary" class="subpanel-body">加载中…</div>
+    </details>
+    <details class="dash-subpanel">
+        <summary>全部挂载点与用途（启发式）</summary>
+        <div id="dash-storage-list"></div>
+    </details>
+</div>
+
+<% js = { "arx-dashboard/js/dashboard-overview.js?v=4" } %>
+<%+footer%>

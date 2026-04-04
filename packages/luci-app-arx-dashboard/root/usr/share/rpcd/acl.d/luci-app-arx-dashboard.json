@@ -1,0 +1,18 @@
+{
+    "arx-dashboard": {
+        "description": "ARX3000M System Dashboard",
+        "read": {
+            "file": {
+                "/proc/stat": [ "read" ],
+                "/proc/meminfo": [ "read" ],
+                "/proc/uptime": [ "read" ],
+                "/proc/loadavg": [ "read" ],
+                "/sys/class/thermal": [ "read" ],
+                "/proc/net/dev": [ "read" ],
+                "/proc/mounts": [ "read" ],
+                "/tmp/sysinfo/*": [ "read" ]
+            }
+        },
+        "write": {}
+    }
+}

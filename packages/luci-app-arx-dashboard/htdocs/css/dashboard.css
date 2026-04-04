@@ -1,0 +1,319 @@
+/* Realtime speed gauge (Mbps) */
+.dash-speed-gauge {
+    margin: 0 0 18px;
+    padding: 14px 16px 12px;
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+}
+.dash-speed-gauge__inner {
+    max-width: 440px;
+    margin: 0 auto;
+}
+.dash-speed-gauge__svg {
+    width: 100%;
+    max-width: 400px;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+#dash-gauge-rx-arc,
+#dash-gauge-tx-arc {
+    transition: stroke-dashoffset 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.dash-speed-gauge__labels {
+    display: flex;
+    justify-content: space-around;
+    gap: 12px;
+    margin-top: -26px;
+    padding: 0 8px 4px;
+    position: relative;
+    z-index: 1;
+}
+.dash-speed-gauge__col {
+    text-align: center;
+    min-width: 96px;
+}
+.dash-speed-gauge__cap {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+}
+.dash-speed-gauge__mbps {
+    display: inline-block;
+    font-size: 22px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    line-height: 1.15;
+    transition: color 0.2s ease;
+}
+.dash-speed-gauge__unit {
+    display: block;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+.dash-speed-gauge__hint {
+    margin: 10px 0 0;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+.dash-speed-gauge.dash-speed-gauge--capped {
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
+}
+
+#iface-table td.font-mono-data .arx-copy-btn {
+    width: 24px;
+    height: 24px;
+}
+
+.dashboard-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+.dash-col {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+.fw-mini-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.status-card .card-value-row#net-value {
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    align-items: baseline;
+}
+@media (max-width: 640px) {
+    .dash-hero__sep {
+        display: none;
+    }
+    .dash-hero__item {
+        flex: 1 1 100%;
+        padding-left: 4px;
+        padding-right: 4px;
+    }
+}
+
+@media (max-width: 1024px) {
+    .dashboard-columns {
+        grid-template-columns: 1fr;
+    }
+    .fw-mini-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+@media (max-width: 768px) {
+    .fw-mini-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Storage / IPv6 / mWAN / WiFi / DNS extras */
+.dash-hero--extra {
+    flex-wrap: wrap;
+}
+.dash-subpanel {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+}
+.dash-subpanel summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.dash-subpanel .subpanel-body {
+    margin-top: 10px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+.traffic-light {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+.traffic-light--ok { background: var(--success); }
+.traffic-light--warn { background: var(--warning); }
+.traffic-light--bad { background: var(--danger); }
+.traffic-light--na { background: var(--text-muted); }
+.ipv6-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+.ipv6-cell {
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bg-card);
+    font-size: 12px;
+}
+.storage-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 12px;
+}
+.storage-row:last-child { border-bottom: 0; }
+.storage-warn { color: var(--warning); }
+.storage-danger { color: var(--danger); }
+
+/* Firmware spotlight card */
+.firmware-card {
+    margin-bottom: 16px;
+    padding: 18px 20px;
+    border-radius: var(--radius-md, 12px);
+    background: linear-gradient(135deg, rgba(var(--primary-rgb, 91, 107, 192), 0.12), rgba(139, 92, 246, 0.08));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+.fw-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+.fw-card-badge {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(var(--primary-rgb), 0.25);
+    color: var(--primary-light);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.fw-card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.fw-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px 16px;
+}
+@media (max-width: 520px) {
+    .fw-card-grid { grid-template-columns: 1fr; }
+}
+.fw-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+.fw-cell-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+.fw-cell-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-word;
+    line-height: 1.35;
+}
+.fw-cell-value.fw-mono {
+    font-family: var(--font-mono-data, ui-monospace, monospace);
+    font-size: 12px;
+}
+.fw-card-footer {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+}
+.fw-overlay-summary {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    font-variant-numeric: tabular-nums;
+}
+.fw-disk-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.fw-disk-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-width: 72px;
+}
+.fw-disk-bar {
+    flex: 1;
+    min-width: 100px;
+    height: 6px;
+    border-radius: 4px;
+    background: var(--bg-input);
+    overflow: hidden;
+}
+.fw-disk-fill {
+    height: 100%;
+    border-radius: 4px;
+    width: 0%;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+    transition: width 0.5s ease;
+}
+.fw-disk-pct {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    min-width: 36px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Service row actions (list row layout from theme .service-list li) */
+.svc-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.svc-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-hover);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    transition: background 0.2s, transform 0.15s;
+}
+.svc-btn:hover {
+    background: var(--bg-card);
+    transform: scale(1.05);
+}
+.svc-btn:active {
+    transform: scale(0.96);
+}
+.svc-stop:hover {
+    border-color: rgba(239, 68, 68, 0.4);
+}

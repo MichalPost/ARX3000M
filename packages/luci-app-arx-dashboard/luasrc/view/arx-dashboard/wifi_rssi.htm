@@ -1,0 +1,142 @@
+<%+header%>
+<style>
+.arx-rssi-page { max-width: 720px; }
+.arx-rssi-bars { display: flex; align-items: flex-end; justify-content: center; gap: 18px 24px; flex-wrap: wrap; min-height: 200px; padding: 16px 8px 8px; }
+.arx-rssi-col { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 88px; }
+.arx-rssi-bar-wrap {
+    position: relative;
+    width: 44px;
+    height: 160px;
+    border-radius: 10px;
+    background: var(--bg-sidebar, rgba(0,0,0,0.2));
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+}
+.arx-rssi-bar-fill {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    min-height: 4px;
+    border-radius: 0 0 8px 8px;
+    transition: height 0.35s ease, background 0.25s ease;
+}
+.arx-rssi-dbm { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+.arx-rssi-meta { font-size: 11px; color: var(--text-muted); text-align: center; line-height: 1.35; max-width: 100px; word-break: break-all; }
+.arx-rssi-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); padding: 0 12px 8px; max-width: 400px; margin: 0 auto; }
+</style>
+
+<div class="arx-rssi-page animate-in">
+    <h1>无线信号强度</h1>
+    <p style="color:var(--text-muted);margin-bottom:20px;">各 AP 接口 RSSI（dBm），来自 <code>iwinfo</code>。颜色：强（绿）→ 中（黄）→ 弱（红）。</p>
+    <p style="margin-bottom:16px;">
+        <a href="<%=url('admin/network/wireless')%>" class="cbi-button cbi-button-link">打开无线设置</a>
+        <a href="<%=url('admin/arx-dashboard/overview')%>" class="cbi-button cbi-button-link">返回仪表盘</a>
+    </p>
+    <div class="cbi-section">
+        <div id="arx-rssi-loading" style="padding:24px;text-align:center;color:var(--text-muted);">加载中…</div>
+        <div id="arx-rssi-empty" style="display:none;padding:24px;text-align:center;color:var(--text-muted);">未获取到无线接口或 <code>iwinfo</code> 无数据（部分驱动不报告 Signal）。</div>
+        <div id="arx-rssi-bars" class="arx-rssi-bars" style="display:none;"></div>
+        <div id="arx-rssi-scale" class="arx-rssi-scale" style="display:none;">
+            <span>-30</span><span>-50</span><span>-70</span><span>-90</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var DATA_URL = '<%=url("admin/arx-dashboard/wifi_rssi_data")%>';
+    var DBM_MIN = -90, DBM_MAX = -30;
+
+    function esc(t) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(t == null ? '' : String(t)));
+        return d.innerHTML;
+    }
+
+    function rssiColor(db) {
+        if (db == null || isNaN(db)) return 'var(--text-muted)';
+        if (db >= -55) return '#22c55e';
+        if (db >= -67) return '#eab308';
+        if (db >= -80) return '#f59e0b';
+        return '#ef4444';
+    }
+
+    function rssiHeightPct(db) {
+        if (db == null || isNaN(db)) return 8;
+        var c = Math.max(DBM_MIN, Math.min(DBM_MAX, db));
+        return Math.round(((c - DBM_MIN) / (DBM_MAX - DBM_MIN)) * 100);
+    }
+
+    function render(radios) {
+        var load = document.getElementById('arx-rssi-loading');
+        var empty = document.getElementById('arx-rssi-empty');
+        var box = document.getElementById('arx-rssi-bars');
+        var scale = document.getElementById('arx-rssi-scale');
+        if (load) load.style.display = 'none';
+        if (!radios || !radios.length) {
+            if (empty) empty.style.display = 'block';
+            if (box) box.style.display = 'none';
+            if (scale) scale.style.display = 'none';
+            return;
+        }
+        if (empty) empty.style.display = 'none';
+        if (box) {
+            box.style.display = 'flex';
+            box.innerHTML = '';
+            for (var i = 0; i < radios.length; i++) {
+                var r = radios[i];
+                var db = typeof r.signal_dbm === 'number' ? r.signal_dbm : null;
+                var pct = rssiHeightPct(db);
+                var col = document.createElement('div');
+                col.className = 'arx-rssi-col';
+                var wrap = document.createElement('div');
+                wrap.className = 'arx-rssi-bar-wrap';
+                var fill = document.createElement('div');
+                fill.className = 'arx-rssi-bar-fill';
+                fill.style.height = pct + '%';
+                fill.style.background = rssiColor(db);
+                wrap.appendChild(fill);
+                var dbm = document.createElement('div');
+                dbm.className = 'arx-rssi-dbm';
+                dbm.textContent = db != null ? db + ' dBm' : '—';
+                var meta = document.createElement('div');
+                meta.className = 'arx-rssi-meta';
+                meta.innerHTML = '<strong>' + esc(r.ifname || '') + '</strong><br>' + esc(r.band_hint || '') +
+                    (r.channel ? '<br>Ch ' + esc(r.channel) : '') +
+                    (r.ssid ? '<br>「' + esc(r.ssid) + '」' : '');
+                col.appendChild(wrap);
+                col.appendChild(dbm);
+                col.appendChild(meta);
+                box.appendChild(col);
+            }
+        }
+        if (scale) scale.style.display = 'flex';
+    }
+
+    function load() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', DATA_URL + '?_=' + Date.now(), true);
+        xhr.timeout = 10000;
+        xhr.onload = function() {
+            if (xhr.status !== 200) {
+                document.getElementById('arx-rssi-loading').textContent = '加载失败（HTTP ' + xhr.status + '）';
+                return;
+            }
+            try {
+                var j = JSON.parse(xhr.responseText);
+                render(j.radios || []);
+            } catch (e) {
+                document.getElementById('arx-rssi-loading').textContent = '数据解析失败';
+            }
+        };
+        xhr.onerror = function() {
+            document.getElementById('arx-rssi-loading').textContent = '网络错误';
+        };
+        xhr.send();
+    }
+
+    load();
+    setInterval(load, 4000);
+})();
+</script>
+
+<%+footer%>

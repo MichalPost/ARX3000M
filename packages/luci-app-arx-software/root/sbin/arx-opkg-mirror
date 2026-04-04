@@ -1,0 +1,70 @@
+#!/bin/sh
+# ARX3000M — rewrite opkg distfeeds host (official / TUNA / USTC / custom)
+DISTFEEDS="/etc/opkg/distfeeds.conf"
+BAK="/etc/opkg/distfeeds.conf.bak"
+INITSTAMP="/etc/opkg/.arx-mirror-initialized"
+TMP=""
+
+# [M7] 清理临时文件，防止中断时残留
+cleanup() {
+	[ -n "$TMP" ] && rm -f "$TMP"
+}
+trap cleanup INT TERM EXIT
+
+to_official() {
+	sed \
+		-e 's|https://mirrors.tuna.tsinghua.edu.cn/openwrt|https://downloads.openwrt.org|g' \
+		-e 's|http://mirrors.tuna.tsinghua.edu.cn/openwrt|https://downloads.openwrt.org|g' \
+		-e 's|https://mirrors.ustc.edu.cn/openwrt|https://downloads.openwrt.org|g' \
+		-e 's|http://mirrors.ustc.edu.cn/openwrt|https://downloads.openwrt.org|g' \
+		-e 's|http://downloads.openwrt.org|https://downloads.openwrt.org|g'
+}
+
+case "$1" in
+	default-firstboot)
+		[ -f "$DISTFEEDS" ] || exit 0
+		[ -f "$INITSTAMP" ] && exit 0
+		cp "$DISTFEEDS" "$BAK" 2>/dev/null || true
+		TMP="$(mktemp)"
+		to_official < "$DISTFEEDS" > "$TMP" && mv "$TMP" "$DISTFEEDS"
+		sed -i 's|https://downloads.openwrt.org|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' "$DISTFEEDS"
+		touch "$INITSTAMP"
+		;;
+	apply)
+		PRESET="${2:-tuna}"
+		CUSTOM=""
+		[ -f "$DISTFEEDS" ] || exit 1
+		cp "$DISTFEEDS" "$BAK" 2>/dev/null || true
+		TMP="$(mktemp)"
+		to_official < "$DISTFEEDS" > "$TMP" && mv "$TMP" "$DISTFEEDS"
+		case "$PRESET" in
+			tuna)
+				sed -i 's|https://downloads.openwrt.org|https://mirrors.tuna.tsinghua.edu.cn/openwrt|g' "$DISTFEEDS"
+				;;
+			ustc)
+				sed -i 's|https://downloads.openwrt.org|https://mirrors.ustc.edu.cn/openwrt|g' "$DISTFEEDS"
+				;;
+			official)
+				;;
+			custom)
+				if [ -n "$ARX_CUSTOM_BASE_FILE" ] && [ -f "$ARX_CUSTOM_BASE_FILE" ]; then
+					CUSTOM=$(cat "$ARX_CUSTOM_BASE_FILE")
+				fi
+				if [ -n "$CUSTOM" ]; then
+					sed -i "s#https://downloads.openwrt.org#${CUSTOM}#g" "$DISTFEEDS"
+				fi
+				;;
+			*)
+				exit 1
+				;;
+		esac
+		;;
+	restore)
+		[ -f "$BAK" ] || exit 1
+		cp "$BAK" "$DISTFEEDS"
+		;;
+	*)
+		exit 1
+		;;
+esac
+exit 0

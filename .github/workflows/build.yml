@@ -1,0 +1,345 @@
+name: Build ARX3000M OpenWrt Firmware
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore: ['**.md', '**.txt', 'docs/**', '.gitignore']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: '编译目标'
+        required: false
+        default: 'mediatek/filogic'
+      upload_release:
+        description: '上传到 Release (仅 main 分支)'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENWRT_REPO: https://github.com/openwrt/openwrt.git
+  OPENWRT_BRANCH: main
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: config/rax3000m.config
+  BUILD_DIR: openwrt
+  UPLOAD_BIN: true
+  UPLOAD_FIRMWARE: true
+  CACHE_DIR: ${{ github.workspace }}/cache
+
+jobs:
+  prepare:
+    name: 📦 准备编译环境
+    runs-on: ubuntu-22.04
+    outputs:
+      cache_key: ${{ steps.cache_keys.outputs.key }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 获取缓存 Key
+        id: cache_keys
+        run: |
+          echo "key=arx3000m-${{ env.OPENWRT_BRANCH }}-${{ hashFiles('config/*.config', 'packages/*/Makefile', 'theme/Makefile') }}" >> $GITHUB_OUTPUT
+
+      - name: 缓存 dl 目录 (源码包)
+        uses: actions/cache@v4
+        with:
+          path: dl-cache
+          key: dl-${{ steps.cache_keys.outputs.key }}
+          restore-keys: |
+            dl-arx3000m-${{ env.OPENWRT_BRANCH }}-
+
+      - name: 缓存 ccache (编译缓存)
+        uses: actions/cache@v4
+        with:
+          path: ccache-dir
+          # [L3] 去掉 run_id，使 build job 能命中同一 key 而非只能走 restore-keys 前缀匹配
+          key: ccache-${{ steps.cache_keys.outputs.key }}
+          restore-keys: |
+            ccache-arx3000m-${{ env.OPENWRT_BRANCH }}-
+
+  build:
+    name: 🔨 编译固件
+    runs-on: ubuntu-22.04
+    needs: prepare
+    timeout-minutes: 120
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/ccache-dir
+      CCACHE_TEMPDIR: /tmp/.ccache-temp
+      CCACHE_COMPRESS: true
+      CCACHE_MAXSIZE: 2G
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 恢复 dl 缓存
+        uses: actions/cache@v4
+        with:
+          path: dl-cache
+          # [M6] 与 prepare job 保持一致，加上 "dl-" 前缀才能命中精确 key
+          key: dl-${{ needs.prepare.outputs.cache_key }}
+          restore-keys: |
+            dl-arx3000m-${{ env.OPENWRT_BRANCH }}-
+
+      - name: 恢复 ccache 缓存
+        uses: actions/cache@v4
+        with:
+          path: ccache-dir
+          # [L3] 与 prepare job 保持一致的 key，去掉 run_id
+          key: ccache-${{ needs.prepare.outputs.cache_key }}
+          restore-keys: |
+            ccache-arx3000m-${{ env.OPENWRT_BRANCH }}-
+
+      - name: 安装编译依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ccache ecj fastjar file g++ gcc \
+            default-jdk git libncurses5-dev libssl-dev \
+            python3-distutils python3-pyelftools python3-setuptools \
+            rsync subversion swig unzip wget zlib1g-dev \
+            curl python3-pip python3-full flex bison gettext \
+            libelf-dev autoconf automake libtool binutils \
+            patch bash-completion coreutils quilt \
+            re2c xsltproc zstd libzstd-dev \
+            python3-yaml python3-werkzeug python3-requests \
+            upx-ucl uglifyjs htmlminifier \
+            libxml2-utils xmlstarlet \
+            bc jq rename
+
+      - name: 初始化 ccache
+        run: |
+          ccache --set-config=max_size=${{ env.CCACHE_MAXSIZE }}
+          ccache --set-config=compression=true
+          ccache -z
+          ccache -s || true
+
+      - name: 克隆 OpenWrt 源码
+        run: |
+          if [ -d "${{ env.BUILD_DIR }}" ]; then
+            cd ${{ env.BUILD_DIR }}
+            git pull origin ${{ env.OPENWRT_BRANCH }} 2>/dev/null || true
+          else
+            git clone --depth 1 --branch ${{ env.OPENWRT_BRANCH }} ${{ env.OPENWRT_REPO }} ${{ env.BUILD_DIR }}
+          fi
+          echo "OpenWrt 版本: $(cd ${{ env.BUILD_DIR }} && git describe --tags 2>/dev/null || echo 'latest')"
+          echo "提交信息: $(cd ${{ env.BUILD_DIR }} && git log -1 --pretty=format:'%h %s')"
+
+      - name: 复制自定义包到 OpenWrt
+        run: |
+          cd ${{ env.BUILD_DIR }}
+          mkdir -p package/custom
+
+          # 复制自定义主题
+          if [ -d "$GITHUB_WORKSPACE/theme" ]; then
+            cp -r "$GITHUB_WORKSPACE/theme" package/custom/luci-theme-arx3000m
+            echo "✅ 自定义主题已复制"
+          fi
+
+          # 复制所有自定义应用模块
+          if [ -d "$GITHUB_WORKSPACE/packages" ]; then
+            for pkg in "$GITHUB_WORKSPACE/packages/"*/; do
+              if [ -d "$pkg" ]; then
+                pkg_name=$(basename "$pkg")
+                rm -rf "package/custom/$pkg_name"
+                cp -r "$pkg" "package/custom/"
+                echo "✅ 包 $pkg_name 已复制"
+              fi
+            done
+          fi
+
+          ls -la package/custom/
+
+      - name: 更新并安装 Feeds
+        run: |
+          cd ${{ env.BUILD_DIR }}
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a -f
+
+      - name: 加载预配置
+        run: |
+          cd ${{ env.BUILD_DIR }}
+          if [ -f "$GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}" ]; then
+            cp "$GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}" .config
+            echo "✅ 预配置已加载"
+          else
+            echo "⚠️ 未找到配置文件，使用默认配置"
+          fi
+          make defconfig
+
+      - name: 下载源码包
+        run: |
+          cd ${{ env.BUILD_DIR }}
+
+          # 如果有缓存的 dl 目录，先复制过来
+          if [ -d "$GITHUB_WORKSPACE/dl-cache" ] && [ "$(ls -A $GITHUB_WORKSPACE/dl-cache 2>/dev/null)" ]; then
+            cp -n $GITHUB_WORKSPACE/dl-cache/* dl/ 2>/dev/null || true
+            echo "📦 从缓存恢复 $(ls $GITHUB_WORKSPACE/dl-cache | wc -l) 个源码包"
+          fi
+
+          # 下载缺失的源码包
+          make download -j$(nproc) || {
+            echo "⚠️ 部分源码包下载失败，重试中..."
+            sleep 10
+            make download -j$(nproc)
+          }
+
+          # 缓存下载的文件
+          cp -n dl/* $GITHUB_WORKSPACE/dl-cache/ 2>/dev/null || true
+
+      - name: 编译固件
+        run: |
+          cd ${{ env.BUILD_DIR }}
+          echo "============================================"
+          echo "  开始编译 ARX3000M 固件"
+          echo "  CPU 核心数: $(nproc)"
+          echo "  时间: $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "============================================"
+          # [M10] set -o pipefail 确保 make 失败时步骤失败，防止上传破损固件
+          set -o pipefail
+          make -j$(nproc) V=s 2>&1 | tee build.log
+          echo "============================================"
+          echo "  编译完成!"
+          echo "============================================"
+
+      - name: ccache 统计
+        run: ccache -s || true
+
+      - name: 整理编译产物
+        run: |
+          cd ${{ env.BUILD_DIR }}
+          mkdir -p ${{ github.workspace }}/firmware
+          TARGET_DIR="bin/targets"
+
+          if [ -d "$TARGET_DIR" ]; then
+            # 找到所有生成的固件文件
+            find "$TARGET_DIR" -name "*.bin" -o -name "*.img" -o -name "*.sysupgrade*" -o -name "*.factory*" | while IFS= read -r f; do
+              cp "$f" "${{ github.workspace }}/firmware/" 2>/dev/null || true
+            done
+
+            # 同时复制 manifest 和 sha256sums
+            find "$TARGET_DIR" -name "sha256sums" -exec cp {} "${{ github.workspace }}/firmware/" \; 2>/dev/null || true
+            find "$TARGET_DIR" -name "*.manifest" -exec cp {} "${{ github.workspace }}/firmware/" \; 2>/dev/null || true
+
+            echo "📦 固件产物:"
+            ls -lh "${{ github.workspace }}/firmware/" 2>/dev/null || echo "(无)"
+          else
+            echo "❌ 未找到目标目录，编译可能失败"
+            tail -100 build.log || true
+          fi
+
+      - name: 上传固件产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: arx3000m-firmware-${{ github.run_number }}
+          path: firmware/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: 上传构建日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.run_number }}
+          path: |
+            ${{ env.BUILD_DIR }}/build.log
+            ${{ env.BUILD_DIR }}/logs/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  release:
+    name: 🚀 发布 Release (可选)
+    runs-on: ubuntu-22.04
+    needs: build
+    # [M5] 仅在手动触发且明确勾选 upload_release 时才发布，避免每次 push main 都创建 Release
+    if: |
+      github.event_name == 'workflow_dispatch' && inputs.upload_release == true
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载固件产物
+        uses: actions/download-artifact@v4
+        with:
+          name: arx3000m-firmware-${{ github.run_number }}
+          path: firmware/
+
+      - name: 生成版本标签
+        id: version
+        run: |
+          VERSION="v1.0.${{ github.run_number }}"
+          DATE=$(date '+%Y%m%d')
+          TAG="${VERSION}-${DATE}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "ARX3000M Firmware ${{ steps.version.outputs.tag }}"
+          body: |
+            ## ARX3000M (RAX3000M) OpenWrt 固件
+            
+            **版本**: ${{ steps.version.outputs.tag }}
+            **Commit**: `${{ github.sha }}`
+            **触发**: ${{ github.actor }} via ${{ github.event_name }}
+            
+            ---
+            
+            ### 固件说明
+            
+            | 文件 | 用途 |
+            |------|------|
+            | `*sysupgrade*.bin` | 通过 LuCI 或 SSH 升级刷入（推荐） |
+            | `*factory*.bin` | 首次刷机或恢复出厂用 |
+            
+            ### 刷入方法
+            
+            1. 进入 LuCI 管理页面 → 系统 → 备份/升级
+            2. 选择 `*sysupgrade*.bin` 文件
+            3. 勾选「保留配置」(可选)
+            4. 点击上传固件，等待重启完成
+            
+            ### 功能模块
+            
+            - ✅ ARX3000M 现代化主题 (深色/浅色)
+            - ✅ 系统监控仪表盘 (CPU/内存/温度/网络)
+            - ✅ 设备管理器 (屏蔽/解封/IP绑定)
+            - ✅ 高级网络工具 (端口转发/防火墙/诊断)
+            
+            > ⚠️ 请确认你的设备型号为 RAX3000M (MT7981B)，刷错型号可能导致变砖！
+          files: firmware/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup:
+    name: 清理旧 Release
+    runs-on: ubuntu-22.04
+    needs: release
+    if: always() && needs.release.result == 'success'
+    permissions:
+      contents: write
+
+    steps:
+      - name: 清理旧的 Release (保留最新 5 个)
+        uses: dev-dr-prasad/delete-older-releases@v0.3.0
+        with:
+          keep_latest: 5
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

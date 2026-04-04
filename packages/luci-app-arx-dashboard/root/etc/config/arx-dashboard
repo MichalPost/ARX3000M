@@ -1,0 +1,12 @@
+
+config main 'main'
+	option poll_realtime_sec '10'
+	option poll_logs_sec '20'
+	option poll_services_sec '45'
+	option poll_disk_sec '90'
+	option poll_hero_devices_sec '45'
+	option visibility_pause '1'
+	option hidden_poll_multiplier '3'
+	option defer_heavy_ms '1500'
+	option disk_warn_pct '85'
+	option disk_warn_mb '256'

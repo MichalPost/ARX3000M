@@ -1,0 +1,170 @@
+<%+header%>
+<h1>上行 / 桥接</h1>
+<p style="margin-bottom:20px;color:var(--text-muted);max-width:52em;">
+	本页汇总当前 WAN、无线客户端（STA）、relayd、mwan3、travelmate 的<strong>只读</strong>状态，并提供标准 LuCI 入口。
+	修改接口请在「接口 / 无线」中操作；本插件不直接写入 <code>network</code> / <code>wireless</code>。
+</p>
+
+<div class="cbi-section" style="margin-bottom:18px;">
+	<h3>双频分工（建议）</h3>
+	<p style="margin:8px 0;line-height:1.55;max-width:52em;">
+		若需连接上级 WiFi 同时为本机提供热点，优先让<strong>一路射频做 STA 连上级</strong>、<strong>另一路开 AP</strong>，
+		以减少同频 AP+STA 的信道绑定与兼容性问题。是否支持以 <code>mt76</code> 与固件版本为准，需在设备上实测。
+	</p>
+</div>
+
+<div class="cbi-section" style="margin-bottom:18px;">
+	<h3>NAT 路由 vs relayd（伪桥）</h3>
+	<ul style="margin:8px 0 0 1.2em;line-height:1.55;max-width:52em;">
+		<li><strong>NAT</strong>：无线或接口作为 WAN，LAN 为私网，兼容性最好，适合大多数上级热点。</li>
+		<li><strong>relayd</strong>：LuCI 中「中继桥」类场景，便于与上级同网段类需求；需正确配置防火墙区域与 DHCP/IPv6。</li>
+	</ul>
+</div>
+
+<div class="cbi-section" style="margin-bottom:18px;">
+	<h3>Captive Portal（网页认证）</h3>
+	<p style="margin:8px 0;line-height:1.55;max-width:52em;">
+		酒店、校园等需浏览器登录的网络，透明二层桥往往难以完成认证。使用 NAT 路由时，可先保证路由器自身能上网，
+		再由下级设备浏览器完成认证；若仅路由器需弹窗，请用连接本机 LAN 的终端访问管理地址或按上级提示操作。
+	</p>
+</div>
+
+<div class="cbi-section" style="margin-bottom:18px;">
+	<h3>多上行与备份</h3>
+	<p style="margin:8px 0;line-height:1.55;max-width:52em;">
+		有线 WAN 与 WiFi 上行可同时存在，通过 <strong>mwan3</strong> 配置优先级、metric 与离线检测，实现故障切换（需自行完成 mwan3 规则）。
+	</p>
+</div>
+
+<div class="cbi-section animate-in" style="margin-bottom:18px;">
+	<h3>快捷入口</h3>
+	<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+		<a href="<%=url('admin/network/network')%>" class="cbi-button cbi-button-add">接口</a>
+		<a href="<%=url('admin/network/wireless')%>" class="cbi-button cbi-button-add">无线</a>
+		<a href="<%=url('admin/network/firewall')%>" class="cbi-button cbi-button-add">防火墙</a>
+		<a href="<%=url('admin/network/mwan')%>" class="cbi-button cbi-button-link">mwan3</a>
+		<button type="button" class="cbi-button cbi-button-apply" id="bridge-refresh">刷新状态</button>
+	</div>
+</div>
+
+<div class="cbi-section" id="bridge-status-wrap">
+	<h3>当前状态</h3>
+	<p id="bridge-status-loading" style="color:var(--text-muted);">加载中…</p>
+	<div id="bridge-status-body" style="display:none;">
+		<table class="table" style="width:100%;max-width:56em;">
+			<tbody>
+				<tr><th style="width:10em;">默认路由</th><td id="st-defroute">—</td></tr>
+				<tr><th>WAN</th><td id="st-wan">—</td></tr>
+				<tr><th>无线 STA</th><td id="st-sta">—</td></tr>
+				<tr><th>relayd</th><td id="st-relayd">—</td></tr>
+				<tr><th>mwan3</th><td id="st-mwan">—</td></tr>
+				<tr><th>travelmate</th><td id="st-tm">—</td></tr>
+			</tbody>
+		</table>
+	</div>
+	<p id="bridge-status-err" style="display:none;color:var(--color-error, #c00);"></p>
+</div>
+
+<script>
+(function() {
+	var url = '<%=url("admin/arx-bridge/status")%>';
+	function esc(s) {
+		if (s == null) return '';
+		var d = document.createElement('div');
+		d.textContent = String(s);
+		return d.innerHTML;
+	}
+	function load() {
+		var lo = document.getElementById('bridge-status-loading');
+		var bd = document.getElementById('bridge-status-body');
+		var er = document.getElementById('bridge-status-err');
+		lo.style.display = 'block';
+		bd.style.display = 'none';
+		er.style.display = 'none';
+		var xhr = new XMLHttpRequest();
+		xhr.open('GET', url + '?_=' + Date.now(), true);
+		xhr.timeout = 12000;
+		xhr.onload = function() {
+			lo.style.display = 'none';
+			if (xhr.status !== 200) {
+				er.textContent = '加载失败（HTTP ' + xhr.status + '）';
+				er.style.display = 'block';
+				return;
+			}
+			var d;
+			try { d = JSON.parse(xhr.responseText); } catch (e) {
+				er.textContent = '解析 JSON 失败';
+				er.style.display = 'block';
+				return;
+			}
+			var dr = d.default_route || {};
+			var drTxt = (dr.dev && dr.dev.length) ? ('dev ' + dr.dev + (dr.via ? ('，via ' + dr.via) : '')) : '未检测到默认 IPv4 路由';
+			document.getElementById('st-defroute').innerHTML = esc(drTxt);
+
+			var w = d.wan || {};
+			var wTxt = (w.device && w.device.length)
+				? (w.proto + ' · ' + w.device + (w.up ? ' · up' : ' · down') + (w.ipv4 ? (' · ' + w.ipv4) : ''))
+				: ('proto ' + (w.proto || '?') + '（无可用 device）');
+			document.getElementById('st-wan').innerHTML = esc(wTxt);
+
+			var stas = d.wifi_sta || [];
+			var staHtml;
+			if (!stas.length) {
+				staHtml = '未配置 mode=sta 的无线接口';
+			} else {
+				staHtml = '<ul style="margin:0;padding-left:1.2em;">';
+				for (var i = 0; i < stas.length; i++) {
+					var s = stas[i];
+					var bits = [];
+					bits.push('@' + (s.iface_section || '?'));
+					if (s.network) bits.push('→ ' + s.network);
+					if (s.ssid) bits.push('SSID ' + s.ssid);
+					if (s.disabled) bits.push('已禁用');
+					if (s.net_device) bits.push('if ' + s.net_device + (s.net_up ? ' up' : ' down') + (s.ipv4 ? (' ' + s.ipv4) : ''));
+					staHtml += '<li>' + esc(bits.join(' · ')) + '</li>';
+				}
+				staHtml += '</ul>';
+			}
+			document.getElementById('st-sta').innerHTML = staHtml;
+
+			var r = d.relayd || {};
+			document.getElementById('st-relayd').innerHTML = esc(
+				r.config ? ('已安装配置 · ' + (r.relay_count || 0) + ' 条 relay') : '未检测到 /etc/config/relayd'
+			);
+
+			var m = d.mwan3 || {};
+			document.getElementById('st-mwan').innerHTML = esc(
+				m.config ? ('已配置 · ' + (m.interface_count || 0) + ' 个 mwan3 interface') : '未检测到 /etc/config/mwan3'
+			);
+
+			var t = d.travelmate || {};
+			var tmTxt;
+			if (!t.config) {
+				tmTxt = '未检测到 /etc/config/travelmate';
+			} else if (t.ssid || t.iface) {
+				tmTxt = '已配置' + (t.ssid ? (' · ' + t.ssid) : '') + (t.iface ? (' · ' + t.iface) : '') + (t.signal != null ? (' · ' + t.signal + ' dBm') : '');
+			} else {
+				tmTxt = '已安装 travelmate 配置';
+			}
+			document.getElementById('st-tm').innerHTML = esc(tmTxt);
+
+			bd.style.display = 'block';
+		};
+		xhr.onerror = function() {
+			lo.style.display = 'none';
+			er.textContent = '网络错误';
+			er.style.display = 'block';
+		};
+		xhr.ontimeout = function() {
+			lo.style.display = 'none';
+			er.textContent = '请求超时';
+			er.style.display = 'block';
+		};
+		xhr.send();
+	}
+	document.getElementById('bridge-refresh').addEventListener('click', load);
+	load();
+})();
+</script>
+
+<%+footer%>

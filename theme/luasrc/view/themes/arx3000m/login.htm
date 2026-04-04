@@ -1,0 +1,532 @@
+<%#
+    ARX3000M Theme v2.0 - Login Page
+    Glassmorphism login with blurred background (Argon-style)
+-%>
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title><%=pcdata(board_hostname()) %> - Login</title>
+    <script>
+    (function(){try{var T=['dark','light','sky','aurora'],L='arx-theme',LK='arx-theme-user-set';if(localStorage.getItem(LK)==='1'){var v=localStorage.getItem(L);if(v&&T.indexOf(v)>=0){document.documentElement.setAttribute('data-theme',v);return;}}var v2=localStorage.getItem(L);if(v2==='sky'||v2==='aurora'){if(T.indexOf(v2)>=0){document.documentElement.setAttribute('data-theme',v2);return;}}var mq=window.matchMedia('(prefers-color-scheme: light)');document.documentElement.setAttribute('data-theme',mq.matches?'light':'dark');}catch(e){}})();
+    </script>
+    <link rel="stylesheet" href="<%=media%>/css/style.css?v=2.7">
+    <style>
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+            background: var(--page-background);
+        }
+
+        .login-bg {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(91,107,192,0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(100,181,246,0.10) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(139,92,246,0.08) 0%, transparent 50%);
+        }
+
+        .login-bg::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image:
+                radial-gradient(circle at 25% 25%, rgba(255,255,255,0.03) 1px, transparent 1px),
+                radial-gradient(circle at 75% 75%, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 60px 60px, 80px 80px;
+        }
+
+        :is([data-theme="light"], [data-theme="sky"]) .login-bg {
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(91,107,192,0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(100,181,246,0.06) 0%, transparent 50%);
+        }
+
+        [data-theme="sky"] .login-bg {
+            background:
+                radial-gradient(ellipse at 25% 40%, rgba(14,165,233,0.12) 0%, transparent 55%),
+                radial-gradient(ellipse at 75% 25%, rgba(56,189,248,0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 85%, rgba(2,132,199,0.06) 0%, transparent 50%);
+        }
+
+        [data-theme="aurora"] .login-bg {
+            background:
+                radial-gradient(ellipse at 20% 30%, rgba(167,139,250,0.14) 0%, transparent 50%),
+                radial-gradient(ellipse at 85% 20%, rgba(94,234,212,0.1) 0%, transparent 48%),
+                radial-gradient(ellipse at 50% 90%, rgba(56,189,248,0.08) 0%, transparent 55%);
+        }
+
+        .login-card {
+            position: relative;
+            z-index: 1;
+            width: 400px;
+            max-width: 92vw;
+            padding: 48px 40px 40px;
+            border-radius: 20px;
+            background: rgba(17, 24, 39, 0.65);
+            backdrop-filter: blur(24px) saturate(180%);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow:
+                0 32px 64px rgba(0,0,0,0.4),
+                0 8px 24px rgba(0,0,0,0.3),
+                inset 0 1px 0 rgba(255,255,255,0.06);
+            animation: loginFloatIn 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        :is([data-theme="light"], [data-theme="sky"]) .login-card {
+            background: rgba(255,255,255,0.78);
+            border-color: rgba(0,0,0,0.06);
+            box-shadow:
+                0 32px 64px rgba(0,0,0,0.12),
+                0 8px 24px rgba(0,0,0,0.08),
+                inset 0 1px 0 rgba(255,255,255,0.9);
+        }
+
+        [data-theme="aurora"] .login-card {
+            background: rgba(16, 26, 42, 0.72);
+            border-color: rgba(255,255,255,0.1);
+            box-shadow:
+                0 32px 64px rgba(0,0,0,0.45),
+                0 8px 24px rgba(0,0,0,0.35),
+                inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+
+        @keyframes loginFloatIn {
+            from { opacity: 0; transform: translateY(30px) scale(0.96); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .login-logo-area {
+            text-align: center;
+            margin-bottom: 36px;
+        }
+
+        .login-logo-icon {
+            width: 68px;
+            height: 68px;
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            border-radius: 18px;
+            background: linear-gradient(135deg, var(--primary), #7c4dff);
+            box-shadow: 0 6px 20px rgba(var(--primary-rgb), 0.35);
+            animation: logoPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes logoPulse {
+            0%, 100% { box-shadow: 0 6px 20px rgba(91,107,192,0.35); }
+            50%      { box-shadow: 0 6px 28px rgba(91,107,192,0.5); }
+        }
+
+        .login-title {
+            font-size: 23px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+            letter-spacing: -0.3px;
+        }
+
+        .login-subtitle {
+            font-size: 13.5px;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .login-error {
+            background: rgba(239,68,68,0.12);
+            border: 1px solid rgba(239,68,68,0.2);
+            color: #f87171;
+            padding: 11px 16px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            line-height: 1.5;
+            animation: shakeError 0.45s ease;
+            display: none;
+        }
+
+        @keyframes shakeError {
+            0%, 100% { transform: translateX(0); }
+            20%       { transform: translateX(-8px); }
+            40%       { transform: translateX(8px); }
+            60%       { transform: translateX(-5px); }
+            80%       { transform: translateX(5px); }
+        }
+
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .login-field {
+            position: relative;
+        }
+
+        .login-field label {
+            display: block;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 7px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        .login-field input {
+            width: 100%;
+            padding: 14px 16px 14px 46px;
+            border-radius: 12px;
+            border: 1.5px solid var(--border-color);
+            background: rgba(0,0,0,0.15);
+            color: var(--text-primary);
+            font-size: 15px;
+            font-family: inherit;
+            outline: none;
+            transition: all 0.25s ease;
+            box-sizing: border-box;
+        }
+
+        :is([data-theme="light"], [data-theme="sky"]) .login-field input {
+            background: rgba(0,0,0,0.03);
+        }
+
+        .login-field input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.22), 0 2px 8px rgba(var(--primary-rgb), 0.12);
+        }
+
+        .login-field .field-icon {
+            position: absolute;
+            left: 15px;
+            top: 38px;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            opacity: 0.55;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+
+        .login-field input:focus ~ .field-icon,
+        .login-field input:not(:placeholder-shown) ~ .field-icon {
+            opacity: 0.85;
+        }
+
+        .login-options {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 4px;
+        }
+
+        .remember-me {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .remember-me input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 17px;
+            height: 17px;
+            border: 1.5px solid var(--border-color);
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .remember-me input[type="checkbox"]:checked {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .remember-me input[type="checkbox"]:checked::after {
+            content: '✓';
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .login-submit {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: #fff;
+            font-size: 15.5px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 16px rgba(var(--primary-rgb), 0.35);
+            margin-top: 6px;
+            font-family: inherit;
+        }
+
+        .login-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 24px rgba(var(--primary-rgb), 0.45);
+        }
+
+        .login-submit:active {
+            transform: scale(0.98) translateY(0);
+            box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.3);
+        }
+
+        .login-footer-text {
+            text-align: center;
+            margin-top: 28px;
+            font-size: 12px;
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+
+        .login-device-info {
+            text-align: center;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .pw-strength-wrap { margin-top: 8px; }
+        .pw-strength-bar {
+            height: 4px;
+            border-radius: 4px;
+            background: var(--border-color);
+            overflow: hidden;
+            margin-bottom: 6px;
+        }
+        .pw-strength-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 4px;
+            transition: width 0.25s ease, background 0.25s ease;
+        }
+        .pw-strength-fill--0 { width: 0%; background: transparent; }
+        .pw-strength-fill--1 { width: 25%; background: linear-gradient(90deg, #ef4444, #f87171); }
+        .pw-strength-fill--2 { width: 50%; background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+        .pw-strength-fill--3 { width: 75%; background: linear-gradient(90deg, #eab308, #84cc16); }
+        .pw-strength-fill--4 { width: 100%; background: linear-gradient(90deg, #22c55e, #10b981); }
+        .pw-strength-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--text-muted); }
+        @media (prefers-reduced-motion: reduce) {
+            .pw-strength-fill { transition: none; }
+        }
+
+        .login-known-devices { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-color); }
+        .login-known-devices h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 0 0 8px; font-weight: 600; }
+        .login-known-list { list-style: none; margin: 0; padding: 0; max-height: 120px; overflow-y: auto; }
+        .login-known-list li { margin: 0 0 6px; }
+        .login-known-list button {
+            width: 100%; text-align: left; padding: 8px 10px; border-radius: 8px;
+            border: 1px solid var(--border-color); background: var(--bg-input); color: var(--text-primary);
+            font-size: 12px; cursor: pointer; font-family: inherit;
+        }
+        .login-known-list button:hover { border-color: var(--primary); }
+        .login-known-meta { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+        .login-options { flex-wrap: wrap; gap: 10px 16px; }
+
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 36px 26px 30px;
+                border-radius: 16px;
+            }
+            .login-logo-icon {
+                width: 56px; height: 56px;
+                font-size: 24px;
+                border-radius: 14px;
+            }
+            .login-title { font-size: 20px; }
+            .login-field input {
+                padding: 12px 14px 12px 42px;
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body class="login-page">
+    <div class="login-bg"></div>
+
+    <div class="login-card">
+        <div class="login-logo-area">
+            <div class="login-logo-icon">📡</div>
+            <div class="login-title"><%=pcdata(board_hostname()) %></div>
+            <div class="login-subtitle">ARX3000M Management Console</div>
+        </div>
+
+        <% if fuser then %>
+        <div class="login-error" id="login-error" style="display:block;">
+            <%=pcdata(fuser) %>
+        </div>
+        <% end %>
+
+        <form method="post" action="<%=pcdata(request_url()) %>" class="login-form">
+            <div class="login-field">
+                <label for="username">用户名</label>
+                <input type="text" name="luci_username" id="username"
+                       placeholder="请输入用户名" value="<%=pcdata(duser)%>"
+                       autocomplete="username" required autofocus />
+                <span class="field-icon">👤</span>
+            </div>
+
+            <div class="login-field">
+                <label for="password">密码</label>
+                <input type="password" name="luci_password" id="password"
+                       placeholder="请输入密码"
+                       autocomplete="current-password" required />
+                <span class="field-icon">🔒</span>
+                <div class="pw-strength-wrap" id="pw-strength-wrap" aria-live="polite">
+                    <div class="pw-strength-bar"><div class="pw-strength-fill pw-strength-fill--0" id="pw-strength-fill"></div></div>
+                    <div class="pw-strength-label" id="pw-strength-label">强度 —</div>
+                </div>
+            </div>
+
+            <div class="login-options">
+                <label class="remember-me">
+                    <input type="checkbox" name="keepalive" value="1" checked />
+                    <span>保持登录</span>
+                </label>
+                <label class="remember-me">
+                    <input type="checkbox" id="remember-device" value="1" />
+                    <span>记住此设备</span>
+                </label>
+            </div>
+
+            <button type="submit" class="login-submit">登 录</button>
+        </form>
+
+        <div class="login-known-devices" id="login-known-devices" hidden>
+            <h3>此浏览器曾用账号</h3>
+            <ul class="login-known-list" id="login-known-list"></ul>
+        </div>
+
+        <div class="login-device-info">
+            <span style="opacity:0.6;">RAX3000M / MT7981B · Filogic 820</span>
+        </div>
+    </div>
+
+    <script src="<%=media%>/js/arx.js?v=2.7"></script>
+    <script>
+        (function() {
+            var LS_DEV = 'arx-known-devices';
+            function loadList() {
+                try {
+                    var j = localStorage.getItem(LS_DEV);
+                    return j ? JSON.parse(j) : [];
+                } catch (e) { return []; }
+            }
+            function fmt(ts) {
+                if (!ts) return '';
+                var d = new Date(ts);
+                var p = function(n) { return n < 10 ? '0' + n : '' + n; };
+                return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+            }
+            function renderKnown() {
+                var arr = loadList().filter(function(x) { return x && x.lastUsername; });
+                arr.sort(function(a, b) { return (b.lastSeen || 0) - (a.lastSeen || 0); });
+                var wrap = document.getElementById('login-known-devices');
+                var ul = document.getElementById('login-known-list');
+                if (!wrap || !ul) return;
+                if (!arr.length) { wrap.hidden = true; return; }
+                wrap.hidden = false;
+                ul.innerHTML = '';
+                arr.slice(0, 5).forEach(function(entry) {
+                    var li = document.createElement('li');
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.innerHTML = '<span class="login-known-user"></span><span class="login-known-meta"></span>';
+                    btn.querySelector('.login-known-user').textContent = entry.lastUsername;
+                    btn.querySelector('.login-known-meta').textContent = '上次：' + fmt(entry.lastSeen);
+                    btn.addEventListener('click', function() {
+                        var u = document.getElementById('username');
+                        if (u) u.value = entry.lastUsername;
+                    });
+                    li.appendChild(btn);
+                    ul.appendChild(li);
+                });
+            }
+            renderKnown();
+
+            function scorePassword(pw) {
+                if (!pw) return 0;
+                var s = 0;
+                if (pw.length >= 8) s++;
+                if (/[a-z]/.test(pw)) s++;
+                if (/[A-Z]/.test(pw)) s++;
+                if (/[0-9]/.test(pw)) s++;
+                if (/[^A-Za-z0-9]/.test(pw)) s++;
+                return Math.min(4, s);
+            }
+            var pwInput = document.getElementById('password');
+            var fillEl = document.getElementById('pw-strength-fill');
+            var labelEl = document.getElementById('pw-strength-label');
+            if (pwInput && fillEl && labelEl) {
+                var labels = ['弱', '较弱', '中', '较强', '强'];
+                pwInput.addEventListener('input', function() {
+                    var sc = scorePassword(pwInput.value);
+                    fillEl.className = 'pw-strength-fill pw-strength-fill--' + sc;
+                    labelEl.textContent = pwInput.value.length ? ('强度：' + labels[sc]) : '强度 —';
+                });
+            }
+
+            var errEl = document.getElementById('login-error');
+            if (errEl && errEl.style.display === 'block') {
+                setTimeout(function() {
+                    errEl.style.animation = 'none';
+                    void errEl.offsetWidth;
+                    errEl.style.animation = 'shakeError 0.45s ease';
+                }, 100);
+
+                if (pwInput) pwInput.focus();
+            } else {
+                var userInput = document.getElementById('username');
+                if (userInput && !userInput.value) userInput.focus();
+            }
+
+            document.querySelector('.login-form').addEventListener('submit', function() {
+                var rd = document.getElementById('remember-device');
+                var userEl = document.getElementById('username');
+                try {
+                    if (rd && rd.checked && userEl && userEl.value) {
+                        sessionStorage.setItem('arx-remember-device', '1');
+                        sessionStorage.setItem('arx-pending-username', userEl.value);
+                    } else {
+                        sessionStorage.removeItem('arx-remember-device');
+                        sessionStorage.removeItem('arx-pending-username');
+                    }
+                } catch (e) {}
+                var btn = this.querySelector('.login-submit');
+                btn.textContent = '登录中...';
+                btn.style.opacity = '0.85';
+                btn.style.pointerEvents = 'none';
+            });
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+    "arx-bridge": {
+        "description": "ARX3000M WiFi uplink / bridge helper",
+        "read": {
+            "uci": [ "arx-bridge", "network", "wireless", "firewall", "mwan3", "relayd", "travelmate" ]
+        },
+        "write": {
+            "uci": [ "arx-bridge" ]
+        }
+    }
+}

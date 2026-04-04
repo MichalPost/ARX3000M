@@ -1,0 +1,16 @@
+
+config portforward 'example_web'
+    option enabled '1'
+    option name 'Web服务转发'
+    option proto 'tcp'
+    option ext_port '8080'
+    option int_ip '192.168.1.100'
+    option int_port '80'
+
+config firewall_rule 'example_block'
+    option enabled '1'
+    option action 'DROP'
+    option chain 'forward'
+    option proto 'tcp'
+    option dst_port '23'
+    option comment '阻止 Telnet'

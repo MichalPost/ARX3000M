@@ -1,0 +1,3 @@
+
+config main 'settings'
+	option enabled '1'

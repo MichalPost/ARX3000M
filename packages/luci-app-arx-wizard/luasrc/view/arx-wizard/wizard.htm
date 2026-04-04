@@ -1,0 +1,76 @@
+<%+header%>
+<% local err = luci.http.formvalue("err") %>
+<div class="page-header">
+    <div class="page-title-row">
+        <h1>首次配置向导</h1>
+        <span class="page-subtitle">密码、WAN、WiFi、时区、IPv6</span>
+    </div>
+</div>
+<% if err == "pass" then %>
+<p class="alert-message" style="color:var(--danger,#ef4444);margin-bottom:12px">两次输入的密码不一致。</p>
+<% elseif err == "short" then %>
+<p class="alert-message" style="color:var(--danger,#ef4444);margin-bottom:12px">密码过短（至少 6 位）。</p>
+<% elseif err == "passchg" then %>
+<p class="alert-message" style="color:var(--danger,#ef4444);margin-bottom:12px">修改 root 密码失败，请稍后在 系统 → 管理权 中重试。</p>
+<% end %>
+<div class="cbi-section" style="max-width:36rem">
+<form method="post" action="<%=url('admin/arx-wizard/save')%>">
+    <h2 class="section-title">1. Root 密码</h2>
+    <p class="cbi-value-description" style="margin-bottom:8px">留空则跳过（建议首次务必修改）。</p>
+    <div class="cbi-value"><input class="cbi-input-text" type="password" name="w_password" autocomplete="new-password" placeholder="新密码"/></div>
+    <div class="cbi-value" style="margin-top:8px"><input class="cbi-input-text" type="password" name="w_password2" autocomplete="new-password" placeholder="确认密码"/></div>
+
+    <h2 class="section-title" style="margin-top:1.5rem">2. WAN 类型</h2>
+    <select class="cbi-input-select" name="w_wan_proto" id="w_wan_proto">
+        <option value="dhcp">DHCP（自动）</option>
+        <option value="static">静态 IP</option>
+        <option value="pppoe">PPPoE 拨号</option>
+    </select>
+    <div id="wan-static" style="display:none;margin-top:10px">
+        <label>IP</label><input class="cbi-input-text" name="w_wan_ip" placeholder="192.168.1.2"/>
+        <label style="margin-left:8px">掩码</label><input class="cbi-input-text" name="w_wan_mask" value="255.255.255.0"/>
+        <label style="margin-left:8px">网关</label><input class="cbi-input-text" name="w_wan_gw" placeholder="192.168.1.1"/>
+    </div>
+    <div id="wan-pppoe" style="display:none;margin-top:10px">
+        <label>账号</label><input class="cbi-input-text" name="w_ppp_user"/>
+        <label style="margin-left:8px">密码</label><input class="cbi-input-password" type="password" name="w_ppp_pass"/>
+    </div>
+
+    <h2 class="section-title" style="margin-top:1.5rem">3. WiFi（首个 AP）</h2>
+    <div class="cbi-value"><input class="cbi-input-text" name="w_ssid" placeholder="SSID 名称"/></div>
+    <div class="cbi-value" style="margin-top:8px"><input class="cbi-input-text" type="password" name="w_wifi_key" placeholder="无线密码（≥8 位，留空不改）" autocomplete="new-password"/></div>
+
+    <h2 class="section-title" style="margin-top:1.5rem">4. 时区</h2>
+    <select class="cbi-input-select" name="w_tz">
+        <option value="CST-8" selected>CST-8（中国）</option>
+        <option value="UTC0">UTC</option>
+        <option value="EST5EDT,M3.2.0,M11.1.0">美东</option>
+        <option value="CET-1CEST,M3.5.0,M10.5.0/3">中欧</option>
+    </select>
+    <input type="hidden" name="w_zonename" value="Asia/Shanghai"/>
+
+    <h2 class="section-title" style="margin-top:1.5rem">5. LAN IPv6（RA / DHCPv6）</h2>
+    <label><input type="radio" name="w_ipv6" value="1" checked/> 开启</label>
+    <label style="margin-left:16px"><input type="radio" name="w_ipv6" value="0"/> 关闭</label>
+    <p class="cbi-value-description" style="margin-top:8px">仅调整 LAN 侧 RA/DHCPv6；WAN IPv6 请在 网络 菜单中配置 wan6。</p>
+
+    <div style="margin-top:1.5rem">
+        <button type="submit" class="cbi-button cbi-button-save">保存并完成</button>
+        <a class="cbi-button cbi-button-neutral" style="margin-left:8px" href="<%=url('admin/arx-wizard/skip')%>">跳过，进入仪表盘</a>
+    </div>
+</form>
+</div>
+<script>
+(function() {
+    var sel = document.getElementById('w_wan_proto');
+    function sync() {
+        var v = sel && sel.value;
+        var s = document.getElementById('wan-static');
+        var p = document.getElementById('wan-pppoe');
+        if (s) s.style.display = v === 'static' ? 'block' : 'none';
+        if (p) p.style.display = v === 'pppoe' ? 'block' : 'none';
+    }
+    if (sel) { sel.addEventListener('change', sync); sync(); }
+})();
+</script>
+<%+footer%>

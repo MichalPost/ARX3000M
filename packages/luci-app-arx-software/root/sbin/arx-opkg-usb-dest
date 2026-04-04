@@ -1,0 +1,33 @@
+#!/bin/sh
+# Manage optional opkg destination "arxusb" (USB mount) in /etc/opkg.conf
+MARK_B='###ARX_USB_DEST_BEGIN'
+MARK_E='###ARX_USB_DEST_END'
+OPKG=/etc/opkg.conf
+
+strip_block() {
+	[ -f "$OPKG" ] || return 0
+	awk -v b="$MARK_B" -v e="$MARK_E" '
+		$0 == b { skip = 1; next }
+		$0 == e { skip = 0; next }
+		skip == 0 { print }
+	' "$OPKG" > "$OPKG.new" && mv "$OPKG.new" "$OPKG"
+}
+
+case "$1" in
+	clear)
+		strip_block
+		;;
+	set)
+		MP="$2"
+		[ -n "$MP" ] || exit 1
+		if ! awk -v p="$MP" '$2 == p { found = 1 } END { exit found ? 0 : 1 }' /proc/mounts 2>/dev/null; then
+			exit 1
+		fi
+		strip_block
+		printf '%s\ndest arxusb %s\n%s\n' "$MARK_B" "$MP" "$MARK_E" >> "$OPKG"
+		;;
+	*)
+		exit 1
+		;;
+esac
+exit 0

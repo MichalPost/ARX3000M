@@ -1,0 +1,11 @@
+{
+	"arx-wizard": {
+		"description": "ARX first setup wizard",
+		"read": {
+			"uci": ["arx-wizard", "network", "wireless", "system", "dhcp"]
+		},
+		"write": {
+			"uci": ["arx-wizard", "network", "wireless", "system", "dhcp"]
+		}
+	}
+}

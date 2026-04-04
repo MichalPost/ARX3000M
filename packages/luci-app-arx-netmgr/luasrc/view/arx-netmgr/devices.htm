@@ -1,0 +1,352 @@
+<%+header%>
+<h1>📡 设备管理</h1>
+<p style="margin-bottom:24px;color:var(--text-muted);">管理已连接到 ARX3000M 的所有设备</p>
+
+<div class="cbi-section animate-in" style="margin-bottom:16px;">
+    <p style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">限速 / QoS（若固件已安装对应插件）：</p>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        <a href="<%=url('admin/network/sqm')%>" class="cbi-button cbi-button-link">SQM 队列</a>
+        <a href="<%=url('admin/network/eqos')%>" class="cbi-button cbi-button-link">EQoS</a>
+    </div>
+</div>
+
+<div class="cbi-section animate-in">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+        <div>
+            <span id="device-count" class="badge badge-primary">-- 台设备</span>
+            <span id="online-count" class="badge badge-success">-- 在线</span>
+            <span id="blocked-count" class="badge badge-danger">-- 已屏蔽</span>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <input type="text" id="device-search" placeholder="搜索设备名 / IP / MAC..." 
+                   style="padding:8px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);width:240px;font-size:13px;">
+            <select id="device-filter" style="padding:8px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:13px;">
+                <option value="all">全部</option>
+                <option value="wifi">仅 WiFi</option>
+                <option value="ethernet">仅有线</option>
+                <option value="blocked">已屏蔽</option>
+            </select>
+            <button onclick="refreshDevices()" class="cbi-button cbi-button-apply" style="padding:8px 14px;">🔄 刷新</button>
+        </div>
+    </div>
+
+    <div id="device-list">
+        <div class="device-list-skeleton" style="padding:8px 0;">
+            <div class="device-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:70%;"></div></div></div>
+            <div class="device-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:55%;"></div></div></div>
+            <div class="device-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:62%;"></div></div></div>
+        </div>
+    </div>
+</div>
+
+<div class="cbi-section animate-in" id="device-detail-panel" style="display:none;">
+    <h2 id="detail-title">📋 设备详情</h2>
+    <div id="detail-content"></div>
+</div>
+
+<script>
+(function() {
+    var allDevices = [];
+
+    function refreshDevices() { window.refreshDevices && window.refreshDevices(); }
+
+    function renderDevices(devices) {
+        var container = document.getElementById('device-list');
+        var search = (document.getElementById('device-search').value || '').toLowerCase();
+        var filter = document.getElementById('device-filter').value;
+
+        var filtered = devices.filter(function(d) {
+            if (search && !((d.hostname||'').toLowerCase().indexOf(search) >= 0 ||
+                           d.ip.indexOf(search) >= 0 || d.mac.indexOf(search) >= 0)) return false;
+            if (filter === 'wifi' && d.type !== 'wifi') return false;
+            if (filter === 'ethernet' && d.type !== 'ethernet') return false;
+            if (filter === 'blocked' && !d.blocked) return false;
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="graph-container"><p style="color:var(--text-muted);">' +
+                (devices.length === 0 ? '暂无已连接设备' : '没有匹配的设备') + '</p></div>';
+            return;
+        }
+
+        // [MED-3 / LOW-4] 用 DOM 方法构建列表，彻底避免 innerHTML 拼接导致 XSS
+        var frag = document.createDocumentFragment();
+        filtered.forEach(function(d, i) {
+            var icon = d.type === 'wifi' ? '📶' : '🔌';
+            var ledClass = 'device-status-led--offline';
+            var ledLabel = '离线';
+            if (d.blocked) {
+                ledClass = 'device-status-led--blocked';
+                ledLabel = '已屏蔽';
+            } else if (d.online) {
+                ledClass = 'device-status-led--online';
+                ledLabel = '在线';
+            }
+
+            var item = document.createElement('div');
+            item.className = 'device-item animate-in';
+            item.style.animationDelay = (i * 0.03) + 's';
+
+            // 头像区
+            var avatarWrap = document.createElement('div');
+            avatarWrap.className = 'device-avatar-wrap';
+            avatarWrap.title = ledLabel;
+            var avatar = document.createElement('div');
+            avatar.className = 'device-avatar';
+            avatar.textContent = (d.hostname || '?').charAt(0).toUpperCase();
+            var led = document.createElement('span');
+            led.className = 'device-status-led ' + ledClass;
+            led.setAttribute('role', 'img');
+            led.setAttribute('aria-label', ledLabel);
+            avatarWrap.appendChild(avatar);
+            avatarWrap.appendChild(led);
+
+            // 信息区
+            var infoDiv = document.createElement('div');
+            infoDiv.className = 'device-info';
+
+            var nameDiv = document.createElement('div');
+            nameDiv.className = 'device-name';
+            var dispName = (d.alias && d.alias.length) ? (d.alias + ' · ' + (d.hostname || d.ip)) : (d.hostname || d.ip);
+            nameDiv.appendChild(document.createTextNode(dispName));
+            if (d.group && d.group !== 'other') {
+                var grpBadge = document.createElement('span');
+                grpBadge.className = 'badge badge-info';
+                grpBadge.style.fontSize = '10px';
+                grpBadge.textContent = d.group;
+                nameDiv.appendChild(document.createTextNode(' '));
+                nameDiv.appendChild(grpBadge);
+            }
+            var statusBadge = document.createElement('span');
+            statusBadge.className = d.blocked ? 'badge badge-danger' : (d.online ? 'badge badge-success' : 'badge badge-warning');
+            statusBadge.textContent = d.blocked ? '已屏蔽' : (d.online ? icon + ' 在线' : icon + ' 离线');
+            nameDiv.appendChild(document.createTextNode(' '));
+            nameDiv.appendChild(statusBadge);
+
+            var ipDiv = document.createElement('div');
+            ipDiv.className = 'device-ip';
+            var ipSpan = document.createElement('span');
+            ipSpan.className = 'arx-copy-inline';
+            ipSpan.setAttribute('data-arx-copy', d.ip);
+            ipSpan.textContent = d.ip;
+            ipDiv.appendChild(ipSpan);
+            ipDiv.appendChild(document.createTextNode(' · MAC: '));
+            var macSpan = document.createElement('span');
+            macSpan.className = 'arx-copy-inline';
+            macSpan.setAttribute('data-arx-copy', d.mac.toUpperCase());
+            macSpan.textContent = d.mac.toUpperCase();
+            ipDiv.appendChild(macSpan);
+            if (d.vendor) {
+                ipDiv.appendChild(document.createTextNode(' · ' + d.vendor));
+            }
+
+            infoDiv.appendChild(nameDiv);
+            infoDiv.appendChild(ipDiv);
+
+            // 统计区
+            var statsDiv = document.createElement('div');
+            statsDiv.className = 'device-stats';
+            // [MED-3] wifi_signal 用 textContent，不拼入 innerHTML
+            if (d.wifi_signal) {
+                var sig = parseInt(d.wifi_signal, 10);
+                var color = sig > -50 ? 'var(--success)' : sig > -65 ? 'var(--warning)' : 'var(--danger)';
+                var sigStat = document.createElement('div');
+                sigStat.className = 'device-stat';
+                var sigStrong = document.createElement('strong');
+                sigStrong.style.color = color;
+                sigStrong.textContent = d.wifi_signal + ' dBm';
+                sigStat.appendChild(sigStrong);
+                sigStat.appendChild(document.createTextNode('信号'));
+                statsDiv.appendChild(sigStat);
+            }
+            var ifStat = document.createElement('div');
+            ifStat.className = 'device-stat';
+            var ifStrong = document.createElement('strong');
+            ifStrong.textContent = d.interface || '-';
+            ifStat.appendChild(ifStrong);
+            ifStat.appendChild(document.createTextNode('接口'));
+            statsDiv.appendChild(ifStat);
+
+            // 操作按钮区 — [CRIT-3 / LOW-4] 用闭包绑定事件，不拼 onclick 属性
+            var btnDiv = document.createElement('div');
+            btnDiv.style.cssText = 'display:flex;gap:6px;margin-left:auto;padding-left:12px;';
+            (function(mac, ip, blocked) {
+                var actionBtn = document.createElement('button');
+                actionBtn.type = 'button';
+                actionBtn.className = blocked ? 'cbi-button cbi-button-positive' : 'cbi-button cbi-button-negative';
+                actionBtn.style.cssText = 'padding:5px 10px;font-size:11px;';
+                actionBtn.textContent = blocked ? '解除' : '屏蔽';
+                actionBtn.addEventListener('click', function() {
+                    blocked ? unblockDevice(mac) : blockDevice(mac);
+                });
+                var detailBtn = document.createElement('button');
+                detailBtn.type = 'button';
+                detailBtn.className = 'cbi-button cbi-button-link';
+                detailBtn.style.cssText = 'padding:5px 10px;font-size:11px;';
+                detailBtn.textContent = '详情';
+                detailBtn.addEventListener('click', function() { showDetail(mac, ip); });
+                btnDiv.appendChild(actionBtn);
+                btnDiv.appendChild(detailBtn);
+            })(d.mac, d.ip, d.blocked);
+
+            item.appendChild(avatarWrap);
+            item.appendChild(infoDiv);
+            item.appendChild(statsDiv);
+            item.appendChild(btnDiv);
+            frag.appendChild(item);
+        });
+
+        container.innerHTML = '';
+        container.appendChild(frag);
+    }
+
+    window.refreshDevices = refreshDevices;
+
+    window.blockDevice = function(mac) {
+        if (!confirm('确定要屏蔽设备 ' + mac + ' 吗？\n该设备将无法访问网络。')) return;
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '<%=url("admin/arx-netmgr/block_device")%>', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function() {
+            if (xhr.status === 200) try {
+                var r = JSON.parse(xhr.responseText);
+                if (r.success) { ARXTheme.toast(r.message, 'success'); refreshDevices(); }
+                else ARXTheme.toast(r.error, 'danger');
+            } catch(e){}
+        };
+        xhr.send('mac=' + encodeURIComponent(mac));
+    };
+
+    window.saveDeviceMeta = function(mac) {
+        var aliasEl = document.getElementById('meta-alias');
+        var groupEl = document.getElementById('meta-group');
+        if (!aliasEl || !groupEl) return;
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '<%=url("admin/arx-netmgr/save_device_meta")%>', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function() {
+            if (xhr.status === 200) try {
+                var r = JSON.parse(xhr.responseText);
+                if (r.ok) {
+                    if (window.ARXTheme) ARXTheme.toast('已保存', 'success');
+                    refreshDevices();
+                } else if (window.ARXTheme) ARXTheme.toast(r.error || '保存失败', 'danger');
+            } catch(e) {}
+        };
+        xhr.send('mac=' + encodeURIComponent(mac) + '&alias=' + encodeURIComponent(aliasEl.value) + '&group=' + encodeURIComponent(groupEl.value));
+    };
+
+    window.unblockDevice = function(mac) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '<%=url("admin/arx-netmgr/unblock_device")%>', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function() {
+            if (xhr.status === 200) try {
+                var r = JSON.parse(xhr.responseText);
+                if (r.success) { ARXTheme.toast(r.message, 'success'); refreshDevices(); }
+                else ARXTheme.toast(r.error, 'danger');
+            } catch(e){}
+        };
+        xhr.send('mac=' + encodeURIComponent(mac));
+    };
+
+    window.showDetail = function(mac, ip) {
+        var panel = document.getElementById('device-detail-panel');
+        var content = document.getElementById('detail-content');
+
+        content.innerHTML = '<div style="padding:16px;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--row"></div><div class="arx-skeleton arx-skeleton--row" style="width:80%;"></div><div class="arx-skeleton arx-skeleton--row" style="width:60%;"></div></div>';
+        panel.style.display = 'block';
+        document.getElementById('detail-title').textContent = '📋 设备详情 - ' + mac;
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '<%=url("admin/arx-netmgr/device_detail")%>', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.onload = function() {
+            if (xhr.status === 200) try {
+                var detail = JSON.parse(xhr.responseText);
+                var dev = null;
+                for (var i = 0; i < allDevices.length; i++) {
+                    if (allDevices[i].mac === mac) { dev = allDevices[i]; break; }
+                }
+                var alias0 = dev && dev.alias ? dev.alias : '';
+                var group0 = dev && dev.group ? dev.group : 'other';
+                var html = '<table><tbody>';
+                html += '<tr><td style="font-weight:600;width:140px;">MAC 地址</td><td style="font-family:monospace;">' + (detail.mac||'-') + '</td></tr>';
+                html += '<tr><td style="font-weight:600;">厂商</td><td>' + (detail.vendor||'-') + '</td></tr>';
+                html += '<tr><td style="font-weight:600;">可达性</td><td>' + (detail.reachable ? '<span class="badge badge-success">可达 ✓</span>' : '<span class="badge badge-danger">不可达 ✗</span>') + '</td></tr>';
+                html += '<tr><td style="font-weight:600;">活跃连接数</td><td>' + (detail.active_connections||0) + ' 个</td></tr>';
+                html += '</tbody></table>';
+                html += '<div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border-color);">';
+                html += '<h3 style="font-size:14px;margin-bottom:10px;">备注与分组</h3>';
+                html += '<label style="display:block;margin-bottom:6px;font-size:12px;">别名</label>';
+                html += '<input type="text" id="meta-alias" class="cbi-input-text" style="max-width:22em;margin-bottom:10px;" maxlength="64" value="' + escapeHtml(alias0) + '" placeholder="如：客厅电视" />';
+                html += '<label style="display:block;margin-bottom:6px;font-size:12px;">分组</label>';
+                html += '<select id="meta-group" class="cbi-input-select" style="max-width:16em;margin-bottom:12px;">';
+                html += '<option value="other"' + (group0 === 'other' ? ' selected' : '') + '>未分类</option>';
+                html += '<option value="family"' + (group0 === 'family' ? ' selected' : '') + '>家人</option>';
+                html += '<option value="iot"' + (group0 === 'iot' ? ' selected' : '') + '>IoT</option>';
+                html += '</select><br/>';
+                html += '<button type="button" id="meta-save-btn" class="cbi-button cbi-button-apply">保存备注</button>';
+                html += '</div>';
+                content.innerHTML = html;
+                // [C2] 用 addEventListener 绑定，不拼 onclick 属性，避免 mac 注入 JS 字符串
+                var saveBtn = document.getElementById('meta-save-btn');
+                if (saveBtn) {
+                    saveBtn.addEventListener('click', function() { saveDeviceMeta(mac); });
+                }
+            } catch(e){
+                content.innerHTML = '<p style="color:var(--text-muted);">无法获取详情</p>';
+            }
+        };
+        // [CRIT-3] mac 和 ip 均用 encodeURIComponent 编码后再发送
+        xhr.send('mac=' + encodeURIComponent(mac) + '&ip=' + encodeURIComponent(ip));
+
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    function escapeHtml(t) { var d=document.createElement('div'); d.appendChild(document.createTextNode(t)); return d.innerHTML; }
+
+    document.getElementById('device-search').addEventListener('input', renderDevices.bind(null, allDevices));
+    document.getElementById('device-filter').addEventListener('change', renderDevices.bind(null, allDevices));
+
+    // [H2] 防止并发请求：上一次 XHR 未完成时不发新请求
+    var _refreshing = false;
+    window.refreshDevices = function() {
+        if (_refreshing) return;
+        _refreshing = true;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '<%=url("admin/arx-netmgr/devices_json")%>?_=' + Date.now(), true);
+        xhr.timeout = 10000;
+        xhr.onload = function() {
+            _refreshing = false;
+            if (xhr.status === 200) try {
+                var data = JSON.parse(xhr.responseText);
+                allDevices = data.devices || [];
+                renderDevices(allDevices);
+                document.getElementById('device-count').textContent = (data.total || 0) + ' 台设备';
+                document.getElementById('online-count').textContent = allDevices.filter(function(d){return d.online}).length + ' 在线';
+                document.getElementById('blocked-count').textContent = allDevices.filter(function(d){return d.blocked}).length + ' 已屏蔽';
+                if (window.ARXTheme) ARXTheme.toast('设备列表已更新', 'success');
+            } catch(e) { console.error(e); }
+        };
+        xhr.onerror = function() { _refreshing = false; if (window.ARXTheme) ARXTheme.toast('加载失败，请重试', 'danger'); };
+        xhr.ontimeout = function() { _refreshing = false; };
+        xhr.send();
+    };
+
+    refreshDevices = window.refreshDevices;
+
+    var _refreshTimer = setInterval(window.refreshDevices, 30000);
+
+    // [M1] 页面卸载时清理定时器
+    window.addEventListener('beforeunload', function() {
+        clearInterval(_refreshTimer);
+    });
+
+    refreshDevices();
+})();
+</script>
+
+<%+footer%>

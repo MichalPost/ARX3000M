@@ -1,0 +1,97 @@
+#!/bin/sh
+# ARX3000M — migrate /overlay to USB ext4 (extroot). USB sd* partitions only.
+# Usage: arx-extroot-wizard precheck | apply <device> <format:0|1>
+
+set -e
+LOG=/tmp/arx-extroot.log
+
+log() {
+	echo "$@" | tee -a "$LOG"
+}
+
+case "$1" in
+	precheck)
+		: >"$LOG"
+		command -v mkfs.ext4 >/dev/null 2>&1 || { log "缺少 mkfs.ext4（请安装 e2fsprogs）"; exit 1; }
+		command -v blkid >/dev/null 2>&1 || { log "缺少 blkid"; exit 1; }
+		command -v tar >/dev/null 2>&1 || { log "缺少 tar"; exit 1; }
+		log "precheck_ok"
+		exit 0
+		;;
+	apply)
+		DEV="$2"
+		DO_FMT="$3"
+		: >"$LOG"
+		case "$DEV" in
+			/dev/sd[a-z]*[0-9]) ;;
+			*) log "仅允许 USB 类设备路径，例如 /dev/sda1"; exit 1 ;;
+		esac
+		[ -b "$DEV" ] || { log "不是块设备: $DEV"; exit 1; }
+
+		# 卸载该设备上所有挂载
+		for _ in 1 2 3 4 5; do
+			grep "^$DEV " /proc/mounts | awk '{print $2}' | while read -r m; do
+				umount -l "$m" 2>/dev/null || true
+			done
+			umount "$DEV" 2>/dev/null || true
+		done
+
+		if [ "$DO_FMT" = "1" ]; then
+			log "正在格式化 $DEV 为 ext4 …"
+			mkfs.ext4 -F -L arx_extroot "$DEV" >>"$LOG" 2>&1
+		else
+			T=$(blkid -s TYPE -o value "$DEV" 2>/dev/null || true)
+			case "$T" in
+				ext4|ext3) ;;
+				*) log "未勾选格式化时，分区须已为 ext2/3/4，当前类型: ${T:-未知}"; exit 1 ;;
+			esac
+		fi
+
+		MNT="/tmp/arx-extroot-mnt-$$"
+		rm -rf "$MNT" 2>/dev/null || true
+		mkdir -p "$MNT"
+		log "挂载 $DEV -> $MNT"
+		mount "$DEV" "$MNT" >>"$LOG" 2>&1
+
+		if [ "$DO_FMT" != "1" ]; then
+			USED=$(find "$MNT" -mindepth 1 -maxdepth 1 ! -name 'lost+found' 2>/dev/null | wc -l)
+			if [ "$USED" -gt 0 ]; then
+				log "分区非空（除 lost+found 外仍有内容）。请勾选格式化或手动清空。"
+				umount "$MNT" 2>/dev/null || true
+				exit 1
+			fi
+		fi
+
+		log "复制 /overlay 到 $MNT …"
+		if ! ( (cd /overlay && tar cf - .) | (cd "$MNT" && tar xf -) ) >>"$LOG" 2>&1; then
+			log "复制失败 (tar)"
+			umount "$MNT" 2>/dev/null || true
+			exit 1
+		fi
+		sync
+		umount "$MNT" >>"$LOG" 2>&1 || { log "卸载 $MNT 失败"; exit 1; }
+		rmdir "$MNT" 2>/dev/null || true
+
+		UUID=$(blkid -s UUID -o value "$DEV" 2>/dev/null || true)
+		if [ -z "$UUID" ]; then
+			log "无法读取 UUID"
+			exit 1
+		fi
+
+		log "UUID=$UUID"
+		FSTYPE=$(blkid -s TYPE -o value "$DEV" 2>/dev/null || echo ext4)
+		[ -z "$FSTYPE" ] && FSTYPE="ext4"
+		uci set fstab.arx_extroot=mount
+		uci set fstab.arx_extroot.target='/overlay'
+		uci set fstab.arx_extroot.uuid="$UUID"
+		uci set fstab.arx_extroot.fstype="$FSTYPE"
+		uci set fstab.arx_extroot.enabled='1'
+		uci commit fstab
+		log "fstab 已写入 fstab.arx_extroot，请重启路由器。"
+		log "SUCCESS"
+		exit 0
+		;;
+	*)
+		exit 1
+		;;
+esac
