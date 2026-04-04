@@ -164,7 +164,11 @@ jobs:
         run: |
           cd ${{ env.BUILD_DIR }}
           ./scripts/feeds update -a
-          ./scripts/feeds install -a -f
+          ./scripts/feeds install -a -f -p packages
+          ./scripts/feeds install -a -f -p luci
+          ./scripts/feeds install -a -f -p routing
+          ./scripts/feeds install -a -f -p telephony || true
+          ./scripts/feeds install -a -f -p video || true
 
       - name: 加载预配置
         run: |
