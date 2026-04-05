@@ -572,24 +572,24 @@
         xhr.timeout=8000;
         xhr.onload=function() {
             if (xhr.status===200) try {
-                var svcs=JSON.parse(xhr.responseText), list=svcs.services||[], html='', icons={'firewall':'🛡️','dnsmasq':'🌐','network':'📡','dropbear':'🔑','uhttpd':'🌎','samba4':'📂','docker':'🐳','nginx':'🌐','adguardhome':'🛡️','cron':'⏰','ddns':'🌍'};
+                var svcs=JSON.parse(xhr.responseText), list=svcs.services||[], html='', icons={'firewall':'🛡️','dnsmasq':'🌐','network':'📡','dropbear':'🔑','uhttpd':'🌎','samba4':'📂','nginx':'🌐','adguardhome':'🛡️','cron':'⏰','ddns':'🌍'};
                 for(var i=0;i<list.length;i++) {
                     var s=list[i], cls=s.running?'svc-running':'svc-stopped', icon=icons[s.name]||'⚙️', desc=s.description||s.name;
                     html+='<li>';
                     html+='<div class="svc-icon">'+icon+'</div>';
                     html+='<div class="svc-info">';
-                    html+='<div class="svc-name">'+s.name+'</div>';
-                    html+='<div class="svc-desc">'+desc+'</div>';
+                    html+='<div class="svc-name">'+esc(s.name)+'</div>';
+                    html+='<div class="svc-desc">'+esc(desc)+'</div>';
                     html+='</div>';
                     html+='<span class="svc-status '+cls+'">'+(s.running?'运行中':'已停止')+'</span>';
                     html+='<div class="svc-actions">';
                     if (s.running) {
-                        html+='<button type="button" class="svc-btn svc-restart" data-svc="'+esc(s.name)+'" title="重启服务">🔄</button>';
+                        html+='<button type="button" class="svc-btn svc-restart" data-svc="'+escAttr(s.name)+'" title="重启服务">🔄</button>';
                         if (s.name !== 'uhttpd') {
-                            html+='<button type="button" class="svc-btn svc-stop" data-svc="'+esc(s.name)+'" title="停止服务">⏹</button>';
+                            html+='<button type="button" class="svc-btn svc-stop" data-svc="'+escAttr(s.name)+'" title="停止服务">⏹</button>';
                         }
                     } else {
-                        html+='<button type="button" class="svc-btn svc-start" data-svc="'+esc(s.name)+'" title="启动服务">▶</button>';
+                        html+='<button type="button" class="svc-btn svc-start" data-svc="'+escAttr(s.name)+'" title="启动服务">▶</button>';
                     }
                     html+='</div>';
                     html+='</li>';

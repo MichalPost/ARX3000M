@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AdGuard+OC — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.op-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:700px){.op-grid{grid-template-columns:1fr}}
+.op-card{background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);padding:16px}
+.op-card h3{font-size:13px;font-weight:700;margin-bottom:10px}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">状态 / <span>AdGuard+OC 共存</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>🛡️ AdGuard Home + OpenClash 共存</h1>
+      <div class="page-sub">dnsmasq → AdGuard（非 53 端口）→ OpenClash DNS（默认 7874）</div>
+    </div>
+
+    <!-- What this page does -->
+    <div class="card ani">
+      <div class="card-title">📖 本页能做什么</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.7">参考社区教程整理的链路：<strong>客户端 → dnsmasq（53）→ AdGuard Home（自定义端口）→ OpenClash DNS（常见 7874）</strong>。OpenWrt 侧可自动完成的只有「在 dnsmasq 增加/删除 <code>127.0.0.1#端口</code> 转发」；AdGuard 与 OpenClash 的界面选项因版本而异，须在各自 LuCI 中按下列说明勾选。</p>
+      <div class="tip-box" style="margin-top:10px">思路来源：<a href="https://github.com/shawnpxtl/Actions-CMCC-RAX3000M/blob/master/tutorial/adguard-openclash.md" target="_blank" rel="noopener" style="color:var(--primary)">Actions-CMCC-RAX3000M · adguard-openclash.md</a></div>
+    </div>
+
+    <!-- One-click ops -->
+    <div class="op-grid ani">
+      <div class="op-card">
+        <h3>➕ 添加 dnsmasq 转发</h3>
+        <p style="font-size:12px;color:var(--text3);margin-bottom:10px">请先在 AdGuard Home 中将「重定向」设为<strong>作为 dnsmasq 的上游</strong>，并把监听端口设为下方填写的端口（勿用 53）。</p>
+        <div class="form-row">
+          <label class="form-lbl">AdGuard 监听端口</label>
+          <input class="form-inp" type="number" id="adg-port-add" value="5353" min="1" max="65535" style="width:120px">
+        </div>
+        <button class="btn btn-p btn-sm" onclick="addForward()">添加转发 127.0.0.1#端口</button>
+      </div>
+      <div class="op-card">
+        <h3>➖ 移除 dnsmasq 转发</h3>
+        <p style="font-size:12px;color:var(--text3);margin-bottom:10px">填入要移除的端口号，等价于在网络 → DHCP/DNS → DNS 转发中删除对应条目。提交后会执行 <code>dnsmasq restart</code>。</p>
+        <div class="form-row">
+          <label class="form-lbl">要移除的端口</label>
+          <input class="form-inp" type="number" id="adg-port-rm" value="5353" min="1" max="65535" style="width:120px">
+        </div>
+        <button class="btn btn-d btn-sm" onclick="removeForward()">移除该条 dnsmasq 转发</button>
+      </div>
+    </div>
+
+    <!-- Current server list -->
+    <div class="card ani">
+      <div class="card-title">📋 当前 dnsmasq server 列表</div>
+      <pre class="log-pre" id="server-list">127.0.0.1#7874
+114.114.114.114</pre>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">等价于 UCI：<code>uci get dhcp.@dnsmasq[0].server</code></div>
+    </div>
+
+    <!-- AdGuard Steps -->
+    <div class="card ani">
+      <div class="card-title">🛡️ AdGuard Home 手动步骤</div>
+      <ol style="font-size:13px;color:var(--text2);line-height:1.8;padding-left:20px;margin:0">
+        <li>管理设置 → 重定向：<strong>作为 dnsmasq 的上游</strong>；监听端口使用<strong>非 53</strong>（与上方表单一致）。</li>
+        <li>设置 → DNS 设置 → 上游 DNS 服务器：填入 <code>127.0.0.1:7874</code>（OpenClash 默认 DNS 端口）。</li>
+        <li>若上网异常，可尝试将 Bootstrap DNS 设为运营商 DNS。</li>
+      </ol>
+    </div>
+
+    <!-- OpenClash Steps -->
+    <div class="card ani">
+      <div class="card-title">🔓 OpenClash 手动步骤</div>
+      <ol style="font-size:13px;color:var(--text2);line-height:1.8;padding-left:20px;margin:0">
+        <li>运行模式优先 <strong>Redir-Host</strong>；不行再试 <strong>Fake-IP</strong>。</li>
+        <li>插件设置 → DNS：关闭<strong>本地 DNS 劫持</strong>。</li>
+        <li>覆写设置 → DNS：勾选<strong>自定义上游 DNS</strong>；取消两个「追加 … DNS」类选项。</li>
+        <li>有私有 DNS 可在覆写中填写；否则可保持默认。</li>
+      </ol>
+    </div>
+
+    <!-- Links -->
+    <div class="card ani">
+      <div class="card-title">🔗 相关链接</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        <a class="btn btn-g btn-sm" href="dns_chain.html">🔗 DNS 解析链</a>
+        <a class="btn btn-g btn-sm" href="dashboard.html">📊 仪表盘</a>
+        <a class="btn btn-g btn-sm" href="recovery.html">🔧 恢复说明</a>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+var servers = ['127.0.0.1#7874','114.114.114.114'];
+function updateList(){ document.getElementById('server-list').textContent = servers.join('\n') || '（无）'; }
+function addForward() {
+  var port = document.getElementById('adg-port-add').value;
+  if (!port || port == 53) { ARX.toast('端口无效（不能为53）','danger'); return; }
+  var entry = '127.0.0.1#' + port;
+  if (!servers.includes(entry)) servers.unshift(entry);
+  updateList();
+  ARX.toast('已添加转发 ' + entry + '，请重启 dnsmasq','success');
+}
+function removeForward() {
+  var port = document.getElementById('adg-port-rm').value;
+  var entry = '127.0.0.1#' + port;
+  servers = servers.filter(function(s){ return s !== entry; });
+  updateList();
+  ARX.toast('已移除 ' + entry,'success');
+}
+</script>
+</body>
+</html>

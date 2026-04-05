@@ -1,19 +1,19 @@
 <%+header%>
 <% local err = luci.http.formvalue("err") %>
-<div class="page-header">
+<div class="page-header page-hd ani animate-in">
     <div class="page-title-row">
-        <h1>首次配置向导</h1>
-        <span class="page-subtitle">密码、WAN、WiFi、时区、IPv6</span>
+        <h1><svg class="arx-icon" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-sparkles"/></svg> 首次配置向导</h1>
+        <span class="page-subtitle page-sub">密码、WAN、WiFi、时区、IPv6</span>
     </div>
 </div>
 <% if err == "pass" then %>
-<p class="alert-message" style="color:var(--danger,#ef4444);margin-bottom:12px">两次输入的密码不一致。</p>
+<div class="arx-callout arx-callout--danger" style="margin-bottom:12px">两次输入的密码不一致。</div>
 <% elseif err == "short" then %>
-<p class="alert-message" style="color:var(--danger,#ef4444);margin-bottom:12px">密码过短（至少 6 位）。</p>
+<div class="arx-callout arx-callout--danger" style="margin-bottom:12px">密码过短（至少 6 位）。</div>
 <% elseif err == "passchg" then %>
-<p class="alert-message" style="color:var(--danger,#ef4444);margin-bottom:12px">修改 root 密码失败，请稍后在 系统 → 管理权 中重试。</p>
+<div class="arx-callout arx-callout--danger" style="margin-bottom:12px">修改 root 密码失败，请稍后在 系统 → 管理权 中重试。</div>
 <% end %>
-<div class="cbi-section" style="max-width:36rem">
+<div class="cbi-section animate-in" style="max-width:36rem">
 <form method="post" action="<%=url('admin/arx-wizard/save')%>">
     <h2 class="section-title">1. Root 密码</h2>
     <p class="cbi-value-description" style="margin-bottom:8px">留空则跳过（建议首次务必修改）。</p>

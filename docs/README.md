@@ -8,6 +8,10 @@
 - 📊 **系统监控仪表盘** - CPU、内存、温度、网络流量实时监控
 - 📡 **设备管理器** - 在线设备列表、屏蔽/解封、IP-MAC 绑定
 - 🌐 **高级网络工具** - 端口转发、防火墙规则、VPN/DDNS 状态、网络诊断
+- 🔌 **无线桥接概览** - WiFi 上联 / bridge / relayd 只读状态
+- 🧙 **设置向导** - 首次配置引导
+- 📦 **软件源管理** - 软件包源配置
+- 🔓 **WiFi 握手抓包** - hcxdumptool / airodump-ng / tcpdump 抓包工具
 
 ## 硬件规格
 
@@ -37,25 +41,15 @@ ARX3000M/
 │       └── footer.htm        # 页面底部模板
 └── packages/
     ├── luci-app-arx-dashboard/   # 系统监控仪表盘
-    │   ├── Makefile
-    │   ├── luasrc/controller/    # 后端控制器 (JSON API)
-    │   ├── luasrc/view/          # 前端页面 (HTML+JS)
-    │   └── root/usr/share/rpcd/acl.d/  # 权限控制
     ├── luci-app-arx-netmgr/      # 网络/设备管理
-    │   ├── Makefile
-    │   ├── luasrc/controller/
-    │   ├── luasrc/model/cbi/     # CBI 表单模型
-    │   ├── luasrc/view/
-    │   └── root/etc/config/      # UCI 配置
     ├── luci-app-arx-network/     # 高级网络功能
-    │   ├── Makefile
-    │   ├── luasrc/controller/
-    │   ├── luasrc/model/cbi/
-    │   └── luasrc/view/
-    └── luci-app-arx-software/  # 软件源 / 包管理
-        ├── Makefile
-        ├── luasrc/controller/
-        └── luasrc/view/
+    ├── luci-app-arx-software/    # 软件源 / 包管理
+    ├── luci-app-arx-bridge/      # WiFi 桥接/上联概览
+    ├── luci-app-arx-wizard/      # 设置向导
+    ├── luci-app-arx-wificrack/   # WiFi 握手抓包工具
+    ├── aircrack-ng/              # aircrack-ng 依赖包
+    ├── hcxdumptool/              # hcxdumptool 依赖包
+    └── hcxtools/                 # hcxtools 依赖包
 ```
 
 ## 🚀 GitHub Actions 自动编译 (推荐)
@@ -77,28 +71,25 @@ git push -u origin main
 # 2. 推送后，GitHub Actions 自动开始编译
 #    访问: https://github.com/<你的用户名>/arx3000m-openwrt/actions 查看进度
 
-# 3. 编译完成后 (约 30-60 分钟)，下载产物:
-#    - Actions 页面 → 对应 run → Artifacts → 下载 arx3000m-firmware-xxx.zip
-#    - 或 Release 页面 (main 分支自动创建) → 下载 .bin 文件
+# 3. 编译完成后 (约 30-90 分钟)，下载产物:
+#    Actions 页面 → 对应 run → Artifacts → 下载 arx3000m-firmware-xxx.zip
 ```
 
-### 手动触发编译
-
-除了 push 自动触发，还可以手动运行：
+### 手动触发编译 / 发布 Release
 
 1. 进入 **Actions** 页面
 2. 选择 **Build ARX3000M OpenWrt Firmware**
 3. 点击 **Run workflow**
 4. 可选参数：
    - **target**: 编译目标（默认 `mediatek/filogic`）
-   - **upload_release**: 是否上传到 Release（仅 main 分支生效）
+   - **upload_release**: 是否发布到 Release（默认勾选）
 
 ### CI 流程说明
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
 │  准备环境     │ ──▶ │  编译固件     │ ──▶ │  发布 Release │
-│             │     │             │     │              │
+│             │     │             │     │  (手动触发时)  │
 │ · 缓存 dl   │     │ · 安装依赖   │     │ · 创建 Tag   │
 │ · 缓存ccache│     │ · 克隆源码   │     │ · 上传 bin   │
 │ · 生成Key   │     │ · 复制自定义包│     │ · 清理旧版   │
@@ -111,11 +102,12 @@ git push -u origin main
 
 | 特性 | 说明 |
 |------|------|
-| **缓存加速** | dl 目录 + ccache 双缓存，二次编译提速 50%+ |
+| **缓存加速** | dl 目录 + ccache 双缓存，二次编译提速明显 |
 | **并发控制** | 同一分支多次 push 自动取消旧的 |
 | **超时保护** | 单次编译最长 120 分钟 |
 | **日志保留** | 构建日志自动打包为 Artifact，保留 7 天 |
-| **自动发布** | main 分支 push 自动创建 GitHub Release |
+| **固件保留** | 固件 Artifact 保留 14 天 |
+| **自动发布** | push main/master 自动创建 GitHub Release；手动触发默认也发布 |
 | **版本管理** | 格式 `v1.0.<run_id>-<日期>`，自动清理旧版本（保留最新 5 个） |
 
 ### 自定义配置修改
@@ -152,13 +144,13 @@ chmod +x build.sh setup-env.sh
 ./build.sh build
 ```
 
-### 方式二：手动步骤
+### 方式三：手动步骤
 
 ```bash
 # 1. 安装编译依赖 (Ubuntu)
 sudo apt-get update
 sudo apt-get install -y build-essential ccache ecj fastjar file g++ gcc \
-    java-jdk git libncurses5-dev libssl-dev python3-distutils \
+    default-jdk git libncurses5-dev libssl-dev python3-distutils \
     python3-pyelftools python3-setuptools rsync subversion swig unzip \
     wget zlib1g-dev curl python3-full flex bison gettext libelf-dev \
     autoconf automake libtool binutils patch quilt re2c xsltproc zstd
@@ -190,15 +182,20 @@ make -j$(nproc) V=s
 
 ## 编译产物
 
-编译完成后，固件文件位于：
+编译完成后，与本机型的主要文件在（版本号以实际编译输出为准）：
+
 ```
 bin/targets/mediatek/filogic/
-├── openwrt-mediatek-filogic-xiaomi_redmi-router-ax6s-squashfs-sysupgrade.bin  # 升级固件
-├── openwrt-mediatek-filogic-xiaomi_redmi-router-ax6s-squashfs-factory.bin     # 工厂固件
-└── ...
+├── openwrt-<版本>-mediatek-filogic-cmcc_rax3000m-squashfs-sysupgrade.itb   # LuCI / sysupgrade 日常升级
+├── openwrt-<版本>-mediatek-filogic-cmcc_rax3000m-initramfs-recovery.itb     # 串口+TFTP 等救砖用（勿当普通升级包）
+├── openwrt-<版本>-mediatek-filogic-cmcc_rax3000m-nand-ddr3-preloader.bin    # NAND 救砖/裸刷（DDR3/DDR4 需与硬件一致）
+├── openwrt-<版本>-mediatek-filogic-cmcc_rax3000m-nand-ddr3-bl31-uboot.fip
+├── …（nand-ddr4-*、emmc-* 等同目录 artifact）…
+├── sha256sums
+└── …
 ```
 
-> **注意**: RAX3000M 的 sysupgrade 固件可以直接通过 LuCI 或 SSH 升级刷入。
+> **注意**：上游 `cmcc_rax3000m` 的**系统升级镜像为 `.itb`**，不是旧的 `squashfs-sysupgrade.bin`。NAND 版日常升级只用带 **`sysupgrade`** 的 **`.itb`**；**`emmc-*`** 工件仅 eMMC 算力版需要，NAND 机勿刷。
 
 ## 功能模块详解
 
@@ -240,6 +237,25 @@ bin/targets/mediatek/filogic/
   - Ping / Traceroute / NSLookup / Netstat 诊断工具
   - 一键导出脱敏诊断包（与仪表盘「网络健康」同源数据时建议一并安装 `luci-app-arx-dashboard`）
 
+### 4. Bridge (无线桥接概览)
+- **路径**: 服务 → Bridge
+- **功能**: WiFi 上联 / bridge / relayd 状态只读展示
+
+### 5. WiFi Crack (握手抓包)
+- **路径**: 服务 → WiFi Crack
+- **功能**:
+  - 基于 hcxdumptool / airodump-ng / tcpdump 的 WiFi 握手包抓取
+  - 抓包任务管理（启动/停止/下载）
+  - 依赖包：`aircrack-ng`、`hcxdumptool`、`hcxtools`
+
+### 6. Wizard (设置向导)
+- **路径**: 服务 → Wizard
+- **功能**: 首次配置引导流程
+
+### 7. Software (软件源管理)
+- **路径**: 服务 → Software
+- **功能**: opkg 软件源配置与包管理
+
 ## 自定义主题说明
 
 主题采用 CSS 变量系统，支持深色/浅色模式切换。未点击过主题菜单时，亮/暗会跟随系统 **prefers-color-scheme**；在顶栏主题选择器中点选任意主题后，将记住为手动选择并停止自动跟随系统。
@@ -280,6 +296,9 @@ A: 修改 `config/rax3000m.config` 后 push 即可。CI 会根据配置文件 ha
 
 ### Q: Actions 报错怎么办？
 A: 下载 `build-log-xxx` Artifact 查看 `build.log` 尾部错误信息，本地修复后重新 push。
+
+### Q: 如何发布 Release？
+A: push 到 main/master 分支会自动创建 Release。也可以在 Actions 页面手动触发，`upload_release` 默认勾选。
 
 ## 许可证
 

@@ -6,6 +6,7 @@ on:
     paths-ignore: ['**.md', '**.txt', 'docs/**', '.gitignore']
   pull_request:
     branches: [main, master]
+    paths-ignore: ['**.md', '**.txt', 'docs/**', '.gitignore']
   workflow_dispatch:
     inputs:
       target:
@@ -16,8 +17,9 @@ on:
         description: '上传到 Release (仅 main 分支)'
         type: boolean
         required: false
-        default: false
+        default: true
 
+# 同一分支上新运行会取消正在跑的，只保留最新一次（省配额）
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -33,43 +35,9 @@ env:
   CACHE_DIR: ${{ github.workspace }}/cache
 
 jobs:
-  prepare:
-    name: 📦 准备编译环境
-    runs-on: ubuntu-22.04
-    outputs:
-      cache_key: ${{ steps.cache_keys.outputs.key }}
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v6.0.2
-        with:
-          fetch-depth: 0
-
-      - name: 获取缓存 Key
-        id: cache_keys
-        run: |
-          echo "key=arx3000m-${{ env.OPENWRT_BRANCH }}-${{ hashFiles('config/*.config', 'packages/*/Makefile', 'theme/Makefile') }}" >> $GITHUB_OUTPUT
-
-      - name: 缓存 dl 目录 (源码包)
-        uses: actions/cache@v5.0.4
-        with:
-          path: dl-cache
-          key: dl-${{ steps.cache_keys.outputs.key }}
-          restore-keys: |
-            dl-arx3000m-${{ env.OPENWRT_BRANCH }}-
-
-      - name: 缓存 ccache (编译缓存)
-        uses: actions/cache@v5.0.4
-        with:
-          path: ccache-dir
-          # [L3] 去掉 run_id，使 build job 能命中同一 key 而非只能走 restore-keys 前缀匹配
-          key: ccache-${{ steps.cache_keys.outputs.key }}
-          restore-keys: |
-            ccache-arx3000m-${{ env.OPENWRT_BRANCH }}-
-
   build:
     name: 🔨 编译固件
     runs-on: ubuntu-22.04
-    needs: prepare
     timeout-minutes: 120
     env:
       CCACHE_DIR: ${{ github.workspace }}/ccache-dir
@@ -81,23 +49,32 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v6.0.2
 
+      # 缓存必须在写入 dl-cache / ccache-dir 的同一 job 内 save；单独 prepare job 从不填充路径，post 会报 Path Validation Error
+      - name: 获取缓存 Key
+        id: cache_keys
+        run: |
+          echo "key=arx3000m-${{ env.OPENWRT_BRANCH }}-${{ hashFiles('config/*.config', 'packages/*/Makefile', 'theme/Makefile', 'patches/openwrt/*.patch', 'scripts/apply-openwrt-patches.sh', 'scripts/ensure-extra-feeds.sh') }}" >> $GITHUB_OUTPUT
+
       - name: 恢复 dl 缓存
         uses: actions/cache@v5.0.4
         with:
-          path: dl-cache
-          # [M6] 与 prepare job 保持一致，加上 "dl-" 前缀才能命中精确 key
-          key: dl-${{ needs.prepare.outputs.cache_key }}
+          path: ${{ github.workspace }}/dl-cache
+          key: dl-${{ steps.cache_keys.outputs.key }}
           restore-keys: |
             dl-arx3000m-${{ env.OPENWRT_BRANCH }}-
 
       - name: 恢复 ccache 缓存
         uses: actions/cache@v5.0.4
         with:
-          path: ccache-dir
-          # [L3] 与 prepare job 保持一致的 key，去掉 run_id
-          key: ccache-${{ needs.prepare.outputs.cache_key }}
+          path: ${{ github.workspace }}/ccache-dir
+          key: ccache-${{ steps.cache_keys.outputs.key }}
           restore-keys: |
             ccache-arx3000m-${{ env.OPENWRT_BRANCH }}-
+
+      # cache post 会校验 path 存在；仅 restore miss 时 dl-cache 可能尚未创建，提前占位避免 “Path Validation Error”
+      - name: 确保缓存目录存在
+        run: |
+          mkdir -p "${{ github.workspace }}/dl-cache" "${{ github.workspace }}/ccache-dir"
 
       - name: 安装编译依赖
         run: |
@@ -134,6 +111,10 @@ jobs:
           echo "OpenWrt 版本: $(cd ${{ env.BUILD_DIR }} && git describe --tags 2>/dev/null || echo 'latest')"
           echo "提交信息: $(cd ${{ env.BUILD_DIR }} && git log -1 --pretty=format:'%h %s')"
 
+      - name: 应用 OpenWrt 补丁
+        run: |
+          bash "$GITHUB_WORKSPACE/scripts/apply-openwrt-patches.sh" "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/${{ env.BUILD_DIR }}"
+
       - name: 复制自定义包到 OpenWrt
         run: |
           cd ${{ env.BUILD_DIR }}
@@ -162,12 +143,14 @@ jobs:
       - name: 更新并安装 Feeds
         run: |
           cd ${{ env.BUILD_DIR }}
+          bash "$GITHUB_WORKSPACE/scripts/ensure-extra-feeds.sh" "$(pwd)"
           ./scripts/feeds update -a
           ./scripts/feeds install -a -f -p packages
           ./scripts/feeds install -a -f -p luci
           ./scripts/feeds install -a -f -p routing
           ./scripts/feeds install -a -f -p telephony || true
           ./scripts/feeds install -a -f -p video || true
+          ./scripts/feeds install -a -f -p openclash
 
       - name: 加载预配置
         run: |
@@ -197,8 +180,9 @@ jobs:
             make download -j$(nproc)
           }
 
-          # 缓存下载的文件
-          cp -n dl/* $GITHUB_WORKSPACE/dl-cache/ 2>/dev/null || true
+          # 缓存下载的文件（目录须存在，否则 cp 静默失败且 cache post 无内容可存）
+          mkdir -p "$GITHUB_WORKSPACE/dl-cache"
+          cp -n dl/* "$GITHUB_WORKSPACE/dl-cache/" 2>/dev/null || true
 
       - name: 编译固件
         run: |
@@ -225,8 +209,11 @@ jobs:
           TARGET_DIR="bin/targets"
 
           if [ -d "$TARGET_DIR" ]; then
-            # 找到所有生成的固件文件
-            find "$TARGET_DIR" -name "*.bin" -o -name "*.img" -o -name "*.sysupgrade*" -o -name "*.factory*" | while IFS= read -r f; do
+            # 固件：Filogic RAX3000M 上游为 squashfs-sysupgrade.itb / initramfs-recovery.itb 及 bootloader artifact（.bin/.fip）
+            find "$TARGET_DIR" -type f \( \
+              -name "*.bin" -o -name "*.img" -o -name "*.itb" -o \
+              -name "*.fip" -o -name "*.sysupgrade*" -o -name "*.factory*" \
+            \) | while IFS= read -r f; do
               cp "$f" "${{ github.workspace }}/firmware/" 2>/dev/null || true
             done
 
@@ -264,9 +251,10 @@ jobs:
     name: 🚀 发布 Release (可选)
     runs-on: ubuntu-22.04
     needs: build
-    # [M5] 仅在手动触发且明确勾选 upload_release 时才发布，避免每次 push main 都创建 Release
+    # push main/master 时自动发布；手动触发时根据 upload_release 参数决定
     if: |
-      github.event_name == 'workflow_dispatch' && inputs.upload_release == true
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
+      (github.event_name == 'workflow_dispatch' && (inputs.upload_release == true || inputs.upload_release == 'true'))
     permissions:
       contents: write
 
@@ -285,7 +273,8 @@ jobs:
         run: |
           VERSION="v1.0.${{ github.run_number }}"
           DATE=$(date '+%Y%m%d')
-          TAG="${VERSION}-${DATE}"
+          # run_attempt 在「重新运行」同一 workflow run 时递增，避免 tag 已存在导致 Release 失败
+          TAG="${VERSION}-${DATE}-a${{ github.run_attempt }}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
@@ -303,19 +292,21 @@ jobs:
             
             ---
             
-            ### 固件说明
+            ### 固件说明（OpenWrt `main` / `cmcc_rax3000m`）
             
-            | 文件 | 用途 |
+            | 文件（通配） | 用途 |
             |------|------|
-            | `*sysupgrade*.bin` | 通过 LuCI 或 SSH 升级刷入（推荐） |
-            | `*factory*.bin` | 首次刷机或恢复出厂用 |
+            | `*cmcc_rax3000m*squashfs*sysupgrade*.itb` | **日常升级**：LuCI「备份/升级」或 SSH `sysupgrade` |
+            | `*cmcc_rax3000m*initramfs*recovery*.itb` | **救砖/串口**：U-Boot + TFTP 等（勿当普通 LuCI 包乱刷） |
+            | `*cmcc_rax3000m*nand-ddr3-*.bin`/`.fip` 或 `*nand-ddr4-*` | **裸写 Flash**：仅救砖/首次写入，**DDR3/DDR4 必须与硬件一致** |
+            | `*cmcc_rax3000m*emmc-*` | eMMC 算力版用；**NAND 版勿刷** |
             
-            ### 刷入方法
+            ### 刷入方法（已运行 OpenWrt 时）
             
-            1. 进入 LuCI 管理页面 → 系统 → 备份/升级
-            2. 选择 `*sysupgrade*.bin` 文件
-            3. 勾选「保留配置」(可选)
-            4. 点击上传固件，等待重启完成
+            1. 进入 LuCI → 系统 → 备份/升级
+            2. 选择 **`*squashfs*sysupgrade*.itb`**（扩展名为 **`.itb`**）
+            3. 按需勾选「保留配置」
+            4. 上传并等待重启；刷前请核对 `sha256sums`
             
             ### 功能模块
             
@@ -341,7 +332,7 @@ jobs:
 
     steps:
       - name: 清理旧的 Release (保留最新 5 个)
-        uses: dev-dr-prasad/delete-older-releases@v0.3.0
+        uses: dev-drprasad/delete-older-releases@v0.3.0
         with:
           keep_latest: 5
           delete_tags: true

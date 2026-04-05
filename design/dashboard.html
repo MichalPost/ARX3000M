@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>系统仪表盘 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.dash-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.dash-cols{grid-template-columns:1fr}}
+.fw-card{background:linear-gradient(135deg,rgba(var(--primary-rgb),.1),rgba(var(--accent-rgb),.05));border:1px solid rgba(var(--primary-rgb),.2);border-radius:var(--r-lg);padding:16px;margin-bottom:12px}
+.fw-badge{display:inline-block;padding:2px 10px;background:rgba(var(--primary-rgb),.2);color:var(--primary);border-radius:99px;font-size:11px;font-weight:700;margin-bottom:7px}
+.fw-model{font-size:17px;font-weight:700;margin-bottom:10px}
+.fw-cells{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.fw-cell-lbl{font-size:10px;color:var(--text3)}.fw-cell-val{font-size:12px;font-weight:600;font-family:monospace}
+.iface-badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
+.ib-wan{background:rgba(var(--accent-rgb),.15);color:var(--accent)}
+.ib-lan{background:rgba(34,197,94,.15);color:var(--success)}
+.ib-wlan{background:rgba(var(--primary-rgb),.15);color:var(--primary)}
+.svc-bar{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+.svc-chip{display:flex;align-items:center;gap:5px;padding:6px 11px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);font-size:12px}
+.svc-chip .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.dot-ok{background:var(--success)}.dot-warn{background:var(--warning)}.dot-bad{background:var(--danger)}
+.proc-table td{font-family:monospace;font-size:12px}
+.fw-stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.fw-stat{display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--bg-input);border-radius:var(--r-md)}
+.fw-stat-ico{width:28px;height:28px;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.collapse-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:8px;overflow:hidden}
+.collapse-hd{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;cursor:pointer;font-size:13px;font-weight:500;user-select:none}
+.collapse-hd .arr{font-size:11px;color:var(--text3);transition:.2s}
+.collapse-hd.open .arr{transform:rotate(180deg)}
+.collapse-body{display:none;padding:0 14px 12px}
+.collapse-body.open{display:block}
+</style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<div class="main">
+  <!-- Topbar -->
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">状态 / <span>系统仪表盘</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+
+  <div class="content">
+    <!-- Page Header -->
+    <div class="page-hd ani">
+      <h1>📊 系统仪表盘</h1>
+      <div class="page-sub">ARX3000M 实时系统状态总览</div>
+    </div>
+
+    <!-- Speed Gauge -->
+    <div class="gauge-wrap ani">
+      <div class="gauge-col gauge-down">
+        <div class="gauge-cap">↓ 下行</div>
+        <div class="gauge-num">187.4</div>
+        <div class="gauge-unit">Mbps</div>
+      </div>
+      <svg width="160" height="82" viewBox="0 0 160 82">
+        <defs>
+          <linearGradient id="gd" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#22c55e"/><stop offset="100%" stop-color="#38bdf8"/>
+          </linearGradient>
+          <linearGradient id="gu" x1="0%" y1="100%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#ef4444"/>
+          </linearGradient>
+        </defs>
+        <path d="M18 72 A62 62 0 0 1 142 72" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="9"/>
+        <path d="M18 72 A62 62 0 0 1 142 72" fill="none" stroke="url(#gd)" stroke-width="9" stroke-linecap="round" stroke-dasharray="195 195" stroke-dashoffset="58"/>
+        <text x="80" y="60" text-anchor="middle" fill="rgba(255,255,255,0.25)" font-size="9">1000 Mbps</text>
+      </svg>
+      <div class="gauge-col gauge-up">
+        <div class="gauge-cap">↑ 上行</div>
+        <div class="gauge-num">23.1</div>
+        <div class="gauge-unit">Mbps</div>
+      </div>
+    </div>
+
+    <!-- Hero Bar -->
+    <div class="hero-bar ani">
+      <div class="hero-item">
+        <div class="hero-lbl">主机名</div>
+        <div class="hero-val">ARX3000M</div>
+      </div>
+      <div class="hero-item">
+        <div class="hero-lbl">在线设备</div>
+        <div class="hero-val ok">12</div>
+      </div>
+      <div class="hero-item">
+        <div class="hero-lbl">WAN IP</div>
+        <div class="hero-val" style="font-size:13px">114.xxx.xxx.12</div>
+      </div>
+      <div class="hero-item">
+        <div class="hero-lbl">运行时间</div>
+        <div class="hero-val" style="font-size:13px">3d 7h</div>
+      </div>
+    </div>
+
+    <!-- Service Health Bar -->
+    <div class="svc-bar ani">
+      <div class="svc-chip"><span class="dot dot-ok"></span>DDNS <strong>2/2 运行</strong></div>
+      <div class="svc-chip"><span class="dot dot-ok"></span>SmartDNS <strong>运行中</strong></div>
+      <div class="svc-chip"><span class="dot dot-warn"></span>AdGuard <strong>未运行</strong></div>
+      <div class="svc-chip"><span class="dot dot-ok"></span>OpenClash <strong>运行中</strong></div>
+      <div class="svc-chip"><span class="dot dot-bad"></span>PassWall <strong>未运行</strong></div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="qa-wrap ani">
+      <a class="qa-btn" href="#"><span class="qa-ico">🚀</span>OpenClash</a>
+      <a class="qa-btn" href="#"><span class="qa-ico">🌍</span>PassWall</a>
+      <a class="qa-btn" href="#"><span class="qa-ico">📶</span>WiFi设置</a>
+      <a class="qa-btn" href="#"><span class="qa-ico">🛡️</span>防火墙</a>
+      <a class="qa-btn" href="#"><span class="qa-ico">🔒</span>AdGuard</a>
+      <a class="qa-btn" href="#"><span class="qa-ico">🌐</span>SmartDNS</a>
+      <a class="qa-btn" href="netmgr.html"><span class="qa-ico">📱</span>设备管理</a>
+      <a class="qa-btn" href="#"><span class="qa-ico">💿</span>磁盘</a>
+      <a class="qa-btn" href="#" onclick="ARX.toast('正在重启…','warning');return false"><span class="qa-ico">🔄</span>重启</a>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="stat-grid ani">
+      <!-- CPU -->
+      <div class="stat-card" style="--ca:var(--warning)">
+        <div class="stat-lbl">CPU 使用率</div>
+        <div><span class="stat-val">34</span><span class="stat-unit">%</span></div>
+        <div class="prog"><div class="prog-fill fill-w" style="width:34%"></div></div>
+        <div class="stat-sub">4核 · 负载 0.42</div>
+        <div class="spark-wrap">
+          <div class="spark-meta"><span>CPU %</span><span>60s</span></div>
+          <svg class="spark-svg" viewBox="0 0 100 32" preserveAspectRatio="none">
+            <polygon class="spark-fill" points="0,32 0,24 10,20 20,16 30,22 40,14 50,18 60,12 70,16 80,10 90,14 100,18 100,32"/>
+            <polyline class="spark-line" points="0,24 10,20 20,16 30,22 40,14 50,18 60,12 70,16 80,10 90,14 100,18"/>
+          </svg>
+        </div>
+      </div>
+      <!-- Memory -->
+      <div class="stat-card" style="--ca:var(--primary)">
+        <div class="stat-lbl">内存使用</div>
+        <div><span class="stat-val">218</span><span class="stat-unit">MB</span></div>
+        <div class="prog"><div class="prog-fill fill-p" style="width:43%"></div></div>
+        <div class="stat-sub">512MB 总计 · 43%</div>
+      </div>
+      <!-- Network -->
+      <div class="stat-card" style="--ca:var(--success)">
+        <div class="stat-lbl">网络流量</div>
+        <div class="stat-val" style="font-size:18px">↓187 ↑23</div>
+        <div class="prog"><div class="prog-fill fill-s" style="width:19%"></div></div>
+        <div class="stat-sub">Mbps · 峰值 1000</div>
+      </div>
+      <!-- Temp -->
+      <div class="stat-card" style="--ca:var(--danger)">
+        <div class="stat-lbl">SoC 温度</div>
+        <div><span class="stat-val">52</span><span class="stat-unit">°C</span></div>
+        <div class="prog"><div class="prog-fill fill-d" style="width:52%"></div></div>
+        <div class="stat-sub">MT7981B · 正常</div>
+      </div>
+      <!-- Uptime -->
+      <div class="stat-card" style="--ca:var(--accent)">
+        <div class="stat-lbl">运行时间</div>
+        <div class="stat-val" style="font-size:20px">3d 7h</div>
+        <div class="stat-sub">上次重启 4月2日</div>
+      </div>
+      <!-- Disk -->
+      <div class="stat-card" style="--ca:var(--warning)">
+        <div class="stat-lbl">磁盘空间</div>
+        <div><span class="stat-val">48</span><span class="stat-unit">MB</span></div>
+        <div class="prog"><div class="prog-fill fill-w" style="width:62%"></div></div>
+        <div class="stat-sub">Overlay · 62% 已用</div>
+      </div>
+    </div>
+
+    <!-- Two Columns -->
+    <div class="dash-cols">
+      <!-- Left -->
+      <div>
+        <!-- Firmware -->
+        <div class="card ani">
+          <div class="card-title">📋 固件信息</div>
+          <div class="fw-card">
+            <div class="fw-badge">MT7981B</div>
+            <div class="fw-model">中移 RAX3000M</div>
+            <div class="fw-cells">
+              <div><div class="fw-cell-lbl">固件版本</div><div class="fw-cell-val">ARX-2025.04</div></div>
+              <div><div class="fw-cell-lbl">内核版本</div><div class="fw-cell-val">6.6.87</div></div>
+              <div><div class="fw-cell-lbl">架构</div><div class="fw-cell-val">aarch64 A53</div></div>
+              <div><div class="fw-cell-lbl">编译日期</div><div class="fw-cell-val">2025-04-01</div></div>
+            </div>
+          </div>
+          <!-- Interface Table -->
+          <div class="card-title" style="margin-top:4px">🌐 网络接口</div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>接口</th><th>IPv4</th><th>RX</th><th>TX</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><span class="iface-badge ib-wan">WAN</span> eth0</td>
+                  <td style="font-family:monospace;font-size:12px">114.xxx.xxx.12</td>
+                  <td style="color:var(--accent)">↓ 2.1 GB</td>
+                  <td style="color:var(--warning)">↑ 312 MB</td>
+                </tr>
+                <tr>
+                  <td><span class="iface-badge ib-lan">LAN</span> br-lan</td>
+                  <td style="font-family:monospace;font-size:12px">192.168.1.1</td>
+                  <td style="color:var(--accent)">↓ 8.4 GB</td>
+                  <td style="color:var(--warning)">↑ 1.2 GB</td>
+                </tr>
+                <tr>
+                  <td><span class="iface-badge ib-wlan">WLAN</span> wlan0</td>
+                  <td style="font-family:monospace;font-size:12px">—</td>
+                  <td style="color:var(--accent)">↓ 3.2 GB</td>
+                  <td style="color:var(--warning)">↑ 890 MB</td>
+                </tr>
+                <tr>
+                  <td><span class="iface-badge ib-wlan">WLAN</span> wlan1</td>
+                  <td style="font-family:monospace;font-size:12px">—</td>
+                  <td style="color:var(--accent)">↓ 1.8 GB</td>
+                  <td style="color:var(--warning)">↑ 420 MB</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Process TOP5 -->
+        <div class="card ani">
+          <div class="card-title">⚡ 进程 TOP 5</div>
+          <div class="tbl-wrap">
+            <table class="proc-table">
+              <thead><tr><th>PID</th><th>进程</th><th>CPU%</th><th>MEM</th></tr></thead>
+              <tbody>
+                <tr><td>1234</td><td>openclash</td><td style="color:var(--warning)">12.4%</td><td>48 MB</td></tr>
+                <tr><td>5678</td><td>dnsmasq</td><td>3.1%</td><td>8 MB</td></tr>
+                <tr><td>910</td><td>ddns-go</td><td>1.8%</td><td>12 MB</td></tr>
+                <tr><td>1122</td><td>zerotier</td><td>1.2%</td><td>22 MB</td></tr>
+                <tr><td>3344</td><td>adguardhome</td><td style="color:var(--text3)">0%</td><td style="color:var(--text3)">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right -->
+      <div>
+        <!-- Services -->
+        <div class="card ani">
+          <div class="card-title">⚙️ 服务状态</div>
+          <div class="svc-item"><div><div style="font-weight:600">OpenClash</div><div style="font-size:11px;color:var(--text3)">代理 · 端口 7890</div></div><span class="badge b-s">运行中</span></div>
+          <div class="svc-item"><div><div style="font-weight:600">SmartDNS</div><div style="font-size:11px;color:var(--text3)">DNS · 端口 53</div></div><span class="badge b-s">运行中</span></div>
+          <div class="svc-item"><div><div style="font-weight:600">AdGuard Home</div><div style="font-size:11px;color:var(--text3)">广告过滤 · 端口 3000</div></div><span class="badge b-w">未运行</span></div>
+          <div class="svc-item"><div><div style="font-weight:600">PassWall</div><div style="font-size:11px;color:var(--text3)">代理</div></div><span class="badge b-m">未安装</span></div>
+          <div class="svc-item"><div><div style="font-weight:600">Zerotier</div><div style="font-size:11px;color:var(--text3)">VPN · ID: a1b2c3</div></div><span class="badge b-s">运行中</span></div>
+          <div class="svc-item"><div><div style="font-weight:600">DDNS-Go</div><div style="font-size:11px;color:var(--text3)">动态 DNS</div></div><span class="badge b-s">运行中</span></div>
+        </div>
+        <!-- Firewall -->
+        <div class="card ani">
+          <div class="card-title">🛡️ 防火墙状态</div>
+          <div class="fw-stat-grid">
+            <div class="fw-stat">
+              <div class="fw-stat-ico" style="background:rgba(34,197,94,.15)">✅</div>
+              <div><div style="font-size:10px;color:var(--text3)">INPUT 链</div><div style="font-size:13px;font-weight:600">24 条规则</div></div>
+            </div>
+            <div class="fw-stat">
+              <div class="fw-stat-ico" style="background:rgba(var(--primary-rgb),.15)">↔️</div>
+              <div><div style="font-size:10px;color:var(--text3)">FORWARD 链</div><div style="font-size:13px;font-weight:600">18 条规则</div></div>
+            </div>
+            <div class="fw-stat">
+              <div class="fw-stat-ico" style="background:rgba(var(--accent-rgb),.15)">↑</div>
+              <div><div style="font-size:10px;color:var(--text3)">NAT 转发</div><div style="font-size:13px;font-weight:600">12 条规则</div></div>
+            </div>
+            <div class="fw-stat">
+              <div class="fw-stat-ico" style="background:rgba(245,158,11,.15)">⚡</div>
+              <div><div style="font-size:10px;color:var(--text3)">SFE 加速</div><div style="font-size:13px;font-weight:600;color:var(--success)">已启用</div></div>
+            </div>
+          </div>
+        </div>
+        <!-- Logs -->
+        <div class="card ani">
+          <div class="card-title">📜 最近日志</div>
+          <pre class="log-pre">Apr  5 14:31:42 ARX3000M dnsmasq[1234]: query[A] google.com from 192.168.1.100
+Apr  5 14:31:40 ARX3000M kernel: nf_conntrack: table full
+Apr  5 14:31:38 ARX3000M openclash[5678]: [Info] Clash core started
+Apr  5 14:31:35 ARX3000M ddns-go[910]: [INFO] Update IP success
+Apr  5 14:31:30 ARX3000M syslog: -- MARK --
+Apr  5 14:31:22 ARX3000M dnsmasq[1234]: DHCP lease 192.168.1.105 to iPhone
+Apr  5 14:31:18 ARX3000M kernel: ath10k: peer 00:11:22:33:44:55 connected</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapse Panels -->
+    <div class="collapse-panel ani">
+      <div class="collapse-hd open" onclick="toggleCollapse(this)">
+        <span>🌐 IPv6 状态</span><span class="arr">▾</span>
+      </div>
+      <div class="collapse-body open">
+        <div style="display:flex;flex-wrap:wrap;gap:7px;padding-top:4px">
+          <div class="info-cell"><span style="color:var(--success)">●</span> WAN6 · 2409:8a28:xxx::1</div>
+          <div class="info-cell"><span style="color:var(--success)">●</span> LAN · fd00::1/64</div>
+          <div class="info-cell"><span style="color:var(--warning)">●</span> PD 前缀 · /60</div>
+        </div>
+      </div>
+    </div>
+    <div class="collapse-panel ani">
+      <div class="collapse-hd" onclick="toggleCollapse(this)">
+        <span>📶 WiFi 环境</span><span class="arr">▾</span>
+      </div>
+      <div class="collapse-body">
+        <p style="font-size:13px;color:var(--text2);line-height:1.7;padding-top:4px">
+          2.4GHz 信道 6 · 周边 AP 14 个 · 干扰中等<br>
+          5GHz 信道 149 · 周边 AP 3 个 · 干扰低
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+function toggleCollapse(hd) {
+  hd.classList.toggle('open');
+  var body = hd.nextElementSibling;
+  body.classList.toggle('open');
+}
+</script>
+</body>
+</html>

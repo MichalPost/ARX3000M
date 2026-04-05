@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>无线信号强度 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.rssi-section{display:flex;flex-direction:column;align-items:center;gap:18px;padding:20px 0}
+.rssi-bars-row{display:flex;align-items:flex-end;justify-content:center;gap:28px;flex-wrap:wrap}
+.rssi-col{display:flex;flex-direction:column;align-items:center;gap:6px;width:90px}
+.rssi-bar-wrap{position:relative;width:44px;height:150px;border-radius:8px;background:rgba(var(--primary-rgb),.08);border:1px solid var(--border);overflow:hidden}
+.rssi-bar-fill{position:absolute;left:0;right:0;bottom:0;min-height:4px;border-radius:0 0 6px 6px;transition:height .4s ease,background .4s ease}
+.rssi-dbm{font-size:13px;font-weight:700;font-family:monospace}
+.rssi-meta{font-size:10px;color:var(--text3);text-align:center;line-height:1.4}
+.rssi-scale{display:flex;justify-content:space-between;width:100%;max-width:420px;padding:0 4px;font-size:11px;color:var(--text3);font-family:monospace;border-top:1px dashed var(--border);padding-top:6px}
+.link-row{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:18px}
+.refresh-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:rgba(var(--primary-rgb),.1);border:1px solid rgba(var(--primary-rgb),.2);border-radius:99px;font-size:11px;color:var(--primary)}
+</style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">状态 / <span>无线信号强度</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>📶 无线信号强度</h1>
+      <div class="page-sub">各 AP 接口 RSSI (dBm) · 颜色：<span style="color:#22c55e">强(绿)</span> → <span style="color:#eab308">中(黄)</span> → <span style="color:#ef4444">弱(红)</span></div>
+    </div>
+
+    <!-- Links -->
+    <div class="link-row ani">
+      <a class="btn btn-g btn-sm" href="#">📶 打开无线设置</a>
+      <a class="btn btn-g btn-sm" href="dashboard.html">📊 返回仪表盘</a>
+      <span class="refresh-badge" id="refresh-badge">🔄 4s 自动刷新</span>
+    </div>
+
+    <!-- RSSI Chart Card -->
+    <div class="card ani">
+      <div class="card-title">RSSI 柱状图</div>
+      <div class="rssi-section">
+        <div class="rssi-bars-row" id="rssi-bars"></div>
+        <!-- Scale -->
+        <div class="rssi-scale">
+          <span>-30</span><span>-40</span><span>-50</span><span>-60</span><span>-70</span><span>-80</span><span>-90</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3);text-align:center">← 信号越强（dBm 越接近 0）</div>
+      </div>
+    </div>
+
+    <!-- Legend Card -->
+    <div class="card ani">
+      <div class="card-title">颜色说明</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        <div class="info-cell" style="display:flex;align-items:center;gap:7px">
+          <span style="width:12px;height:12px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>
+          <span>强 ≥ -55 dBm</span>
+        </div>
+        <div class="info-cell" style="display:flex;align-items:center;gap:7px">
+          <span style="width:12px;height:12px;border-radius:50%;background:#eab308;flex-shrink:0"></span>
+          <span>中 ≥ -67 dBm</span>
+        </div>
+        <div class="info-cell" style="display:flex;align-items:center;gap:7px">
+          <span style="width:12px;height:12px;border-radius:50%;background:#f59e0b;flex-shrink:0"></span>
+          <span>弱 ≥ -80 dBm</span>
+        </div>
+        <div class="info-cell" style="display:flex;align-items:center;gap:7px">
+          <span style="width:12px;height:12px;border-radius:50%;background:#ef4444;flex-shrink:0"></span>
+          <span>极弱 &lt; -80 dBm</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+// AP data
+var aps = [
+  {iface:'wlan0', freq:'2.4GHz', ch:'Ch6',  ssid:'ARX3000M',    dbm:-52},
+  {iface:'wlan1', freq:'5GHz',   ch:'Ch149', ssid:'ARX3000M_5G', dbm:-48},
+  {iface:'wlan0-1',freq:'2.4GHz',ch:'Ch6',  ssid:'ARX3000M_Guest', dbm:-65},
+];
+
+// height% = (dbm - (-90)) / ((-30) - (-90)) * 100
+function dbmToPct(dbm) {
+  return Math.max(3, Math.min(100, (dbm - (-90)) / 60 * 100));
+}
+
+function dbmToColor(dbm) {
+  if (dbm >= -55) return '#22c55e';
+  if (dbm >= -67) return '#eab308';
+  if (dbm >= -80) return '#f59e0b';
+  return '#ef4444';
+}
+
+function renderBars() {
+  var container = document.getElementById('rssi-bars');
+  container.innerHTML = aps.map(function(ap) {
+    var pct = dbmToPct(ap.dbm);
+    var color = dbmToColor(ap.dbm);
+    return '<div class="rssi-col">'
+      +'<div class="rssi-bar-wrap">'
+      +'<div class="rssi-bar-fill" id="bar-'+ap.iface+'" style="height:'+pct+'%;background:'+color+'"></div>'
+      +'</div>'
+      +'<div class="rssi-dbm" id="dbm-'+ap.iface+'" style="color:'+color+'">'+ap.dbm+' dBm</div>'
+      +'<div class="rssi-meta">'+ap.iface+'<br>'+ap.freq+' '+ap.ch+'<br>'+ap.ssid+'</div>'
+      +'</div>';
+  }).join('');
+}
+
+// 4s auto-refresh: simulate ±3 dBm jitter
+var countdown = 4;
+function tick() {
+  countdown--;
+  var badge = document.getElementById('refresh-badge');
+  if (badge) badge.textContent = '🔄 ' + countdown + 's 自动刷新';
+  if (countdown <= 0) {
+    countdown = 4;
+    aps.forEach(function(ap) {
+      var jitter = Math.round((Math.random() * 6) - 3);
+      ap.dbm = Math.max(-90, Math.min(-30, ap.dbm + jitter));
+      var pct = dbmToPct(ap.dbm);
+      var color = dbmToColor(ap.dbm);
+      var bar = document.getElementById('bar-'+ap.iface);
+      var dbmEl = document.getElementById('dbm-'+ap.iface);
+      if (bar) { bar.style.height = pct+'%'; bar.style.background = color; }
+      if (dbmEl) { dbmEl.textContent = ap.dbm+' dBm'; dbmEl.style.color = color; }
+    });
+  }
+}
+
+renderBars();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

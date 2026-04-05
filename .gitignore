@@ -16,9 +16,16 @@ desktop.ini
 # ---- IDE / Editor ----
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
+
+# ---- Figma / Design tools ----
+.figma/
+
+# ---- Kiro ----
+.kiro/
 
 # ---- OS ----
 *.tmp

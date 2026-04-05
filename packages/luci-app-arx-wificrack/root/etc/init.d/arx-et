@@ -1,0 +1,12 @@
+#!/bin/sh /etc/rc.common
+# Boot cleanup: if Evil Twin left iptables/AP iface behind, stop cleanly.
+
+START=99
+
+start() {
+	[ -f /tmp/arx-et/hostapd.pid ] || return 0
+	pid=$(cat /tmp/arx-et/hostapd.pid 2>/dev/null)
+	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 0
+	logger -t arx-et "boot: cleaning stale Evil Twin state"
+	/usr/bin/arx-et.sh stop 2>/dev/null
+}

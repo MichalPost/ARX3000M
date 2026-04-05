@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>软件管理 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.pkg-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:11px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:7px;transition:.15s}
+.pkg-row:hover{border-color:rgba(var(--primary-rgb),.3)}
+.pkg-ico{font-size:20px;flex-shrink:0}
+.pkg-name{font-weight:600;font-size:13px}.pkg-desc{font-size:11px;color:var(--text3);margin-top:1px}
+.pkg-ver{font-size:11px;font-family:monospace;color:var(--text3)}
+.src-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:7px}
+.src-name{font-weight:600;font-size:13px;min-width:110px}
+.src-url{font-size:12px;font-family:monospace;color:var(--text2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:14px}
+@media(max-width:640px){.stat-grid-3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">工具 / <span>软件管理</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>📦 软件管理</h1>
+      <div class="page-sub">管理已安装软件包与软件源配置</div>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="stat-grid-3 ani">
+      <div class="stat-card" style="--ca:var(--success)">
+        <div class="stat-lbl">已安装</div>
+        <div><span class="stat-val">248</span><span class="stat-unit">个</span></div>
+        <div class="stat-sub">软件包</div>
+      </div>
+      <div class="stat-card" style="--ca:var(--warning)">
+        <div class="stat-lbl">可升级</div>
+        <div><span class="stat-val">12</span><span class="stat-unit">个</span></div>
+        <div class="stat-sub">软件包</div>
+      </div>
+      <div class="stat-card" style="--ca:var(--primary)">
+        <div class="stat-lbl">软件源</div>
+        <div><span class="stat-val">4</span><span class="stat-unit">个</span></div>
+        <div class="stat-sub">已配置</div>
+      </div>
+    </div>
+
+    <!-- Installed Packages -->
+    <div class="card ani">
+      <div class="card-title">
+        <span>📋 已安装软件包</span>
+        <input class="form-inp" style="width:180px" placeholder="搜索包名..." oninput="filterPkgs(this.value)">
+      </div>
+      <div id="pkg-list">
+        <div class="pkg-row">
+          <span class="pkg-ico">🚀</span>
+          <div style="flex:1"><div class="pkg-name">luci-app-openclash</div><div class="pkg-desc">OpenClash 代理客户端</div></div>
+          <span class="pkg-ver">v0.46.003</span>
+          <span class="badge b-s">已安装</span>
+          <button class="btn btn-d btn-sm" onclick="ARX.toast('正在卸载 openclash...','warning')">卸载</button>
+        </div>
+        <div class="pkg-row">
+          <span class="pkg-ico">🔒</span>
+          <div style="flex:1"><div class="pkg-name">luci-app-adguardhome</div><div class="pkg-desc">AdGuard Home 广告过滤</div></div>
+          <span class="pkg-ver">v0.5.21</span>
+          <span class="badge b-s">已安装</span>
+          <button class="btn btn-d btn-sm" onclick="ARX.toast('正在卸载 adguardhome...','warning')">卸载</button>
+        </div>
+        <div class="pkg-row">
+          <span class="pkg-ico">🌐</span>
+          <div style="flex:1"><div class="pkg-name">luci-app-smartdns</div><div class="pkg-desc">SmartDNS 本地 DNS 服务器</div></div>
+          <span class="pkg-ver">v1.2023.06</span>
+          <span class="badge b-s">已安装</span>
+          <button class="btn btn-d btn-sm" onclick="ARX.toast('正在卸载 smartdns...','warning')">卸载</button>
+        </div>
+        <div class="pkg-row">
+          <span class="pkg-ico">📡</span>
+          <div style="flex:1"><div class="pkg-name">hcxdumptool</div><div class="pkg-desc">WiFi 握手包捕获工具</div></div>
+          <span class="pkg-ver">v6.3.4</span>
+          <span class="badge b-s">已安装</span>
+          <button class="btn btn-d btn-sm" onclick="ARX.toast('正在卸载 hcxdumptool...','warning')">卸载</button>
+        </div>
+        <div class="pkg-row">
+          <span class="pkg-ico">🔑</span>
+          <div style="flex:1"><div class="pkg-name">aircrack-ng</div><div class="pkg-desc">WiFi 安全审计套件</div></div>
+          <span class="pkg-ver">v1.7</span>
+          <span class="badge b-w">可升级 → v1.7.1</span>
+          <button class="btn btn-p btn-sm" onclick="ARX.toast('正在升级 aircrack-ng...','success')">升级</button>
+        </div>
+        <div class="pkg-row">
+          <span class="pkg-ico">🔗</span>
+          <div style="flex:1"><div class="pkg-name">zerotier</div><div class="pkg-desc">P2P VPN 网络</div></div>
+          <span class="pkg-ver">v1.12.2</span>
+          <span class="badge b-s">已安装</span>
+          <button class="btn btn-d btn-sm" onclick="ARX.toast('正在卸载 zerotier...','warning')">卸载</button>
+        </div>
+        <div class="pkg-row" style="opacity:.65">
+          <span class="pkg-ico">🌍</span>
+          <div style="flex:1"><div class="pkg-name">luci-app-passwall</div><div class="pkg-desc">PassWall 代理客户端</div></div>
+          <span class="pkg-ver">—</span>
+          <span class="badge b-m">未安装</span>
+          <button class="btn btn-s btn-sm" onclick="ARX.toast('正在安装 passwall...','success')">安装</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sources -->
+    <div class="card ani">
+      <div class="card-title">🗂️ 软件源配置</div>
+      <div class="src-row">
+        <span class="badge b-s">启用</span>
+        <span class="src-name">OpenWrt 官方</span>
+        <span class="src-url">https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/base</span>
+        <button class="btn btn-g btn-sm" onclick="ARX.toast('已切换','success')">禁用</button>
+      </div>
+      <div class="src-row">
+        <span class="badge b-s">启用</span>
+        <span class="src-name">LuCI 软件包</span>
+        <span class="src-url">https://downloads.openwrt.org/snapshots/packages/aarch64_cortex-a53/luci</span>
+        <button class="btn btn-g btn-sm" onclick="ARX.toast('已切换','success')">禁用</button>
+      </div>
+      <div class="src-row">
+        <span class="badge b-s">启用</span>
+        <span class="src-name">第三方源</span>
+        <span class="src-url">https://op.supes.top/packages/aarch64_cortex-a53</span>
+        <button class="btn btn-g btn-sm" onclick="ARX.toast('已切换','success')">禁用</button>
+      </div>
+      <div class="src-row">
+        <span class="badge b-w">禁用</span>
+        <span class="src-name">备用镜像</span>
+        <span class="src-url">https://mirror.nju.edu.cn/openwrt/snapshots/packages/aarch64_cortex-a53/base</span>
+        <button class="btn btn-g btn-sm" onclick="ARX.toast('已切换','success')">启用</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+function filterPkgs(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#pkg-list .pkg-row').forEach(function(row) {
+    var name = row.querySelector('.pkg-name').textContent.toLowerCase();
+    row.style.display = name.includes(q) ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>

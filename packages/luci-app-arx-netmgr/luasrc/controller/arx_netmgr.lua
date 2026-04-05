@@ -26,13 +26,34 @@ local function validate_mac(mac)
 	return mac:match("^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$") ~= nil
 end
 
--- [H2] 验证 IPv4 地址格式，防止 ping/arping 命令注入
+-- [H2] 验证 IPv4：每段 1–3 位、禁止多余前导零、0–255，防止 ping/arping 命令注入
 local function validate_ipv4(ip)
 	if not ip or ip == "" then return false end
-	local a, b, c, d = ip:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+	local a, b, c, d = ip:match("^(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)$")
 	if not a then return false end
-	a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
-	return a <= 255 and b <= 255 and c <= 255 and d <= 255
+	local function oct(s)
+		if #s > 1 and s:sub(1, 1) == "0" then return false end
+		local n = tonumber(s)
+		return n ~= nil and n >= 0 and n <= 255
+	end
+	return oct(a) and oct(b) and oct(c) and oct(d)
+end
+
+-- LAN 侧 arping 使用的网桥/设备名（UCI，与 LuCI 一致）
+local function lan_arp_if()
+	local u = uci.cursor()
+	local dev = u:get("network", "lan", "device") or u:get("network", "lan", "ifname") or "br-lan"
+	dev = (dev or ""):gsub("%s+", "")
+	if dev == "" then dev = "br-lan" end
+	if not dev:match("^[%w@%.%-]+$") then dev = "br-lan" end
+	return dev
+end
+
+local function shell_exit_code(cmd)
+	local out = sys.exec(cmd) or ""
+	out = out:gsub("^%s+", ""):gsub("%s+$", "")
+	local code = out:match("^(%d+)$")
+	return code
 end
 
 -- ==================== 业务逻辑 ====================
@@ -151,13 +172,17 @@ function action_block_device()
 	u:commit("arx-netmgr")
 
 	local iptables_block = function(chain, mac_addr)
-		-- [H1] 先检查规则是否已存在，避免重复添加导致 unblock 失效
-		local exists4 = sys.exec("iptables -C " .. chain .. " -m mac --mac-source " .. mac_addr .. " -j DROP 2>/dev/null; echo $?"):match("^0")
-		if not exists4 then
+		-- [H1] 用单独一行退出码判断，避免 iptables 多行输出导致 ^0 误判
+		local ex4 = shell_exit_code(
+			"iptables -C " .. chain .. " -m mac --mac-source " .. mac_addr .. " -j DROP >/dev/null 2>&1; echo $?"
+		)
+		if ex4 ~= "0" then
 			sys.exec("iptables -I " .. chain .. " -m mac --mac-source " .. mac_addr .. " -j DROP 2>/dev/null")
 		end
-		local exists6 = sys.exec("ip6tables -C " .. chain .. " -m mac --mac-source " .. mac_addr .. " -j DROP 2>/dev/null; echo $?"):match("^0")
-		if not exists6 then
+		local ex6 = shell_exit_code(
+			"ip6tables -C " .. chain .. " -m mac --mac-source " .. mac_addr .. " -j DROP >/dev/null 2>&1; echo $?"
+		)
+		if ex6 ~= "0" then
 			sys.exec("ip6tables -I " .. chain .. " -m mac --mac-source " .. mac_addr .. " -j DROP 2>/dev/null")
 		end
 	end
@@ -166,14 +191,31 @@ function action_block_device()
 	iptables_block("FORWARD", mac)
 	iptables_block("INPUT", mac)
 
-	-- [H3] 写入 blocklist_dhcp 前先去重，unblock 时也能正确清除
+	-- H-2/H-3: 用原子写（写临时文件再 rename）替代 read-check-append，消除 TOCTOU 竞态
+	-- 同时保证去重：先读全文，过滤后写回
 	local dhcp_mac = mac:gsub(":", "")
-	local existing = ""
-	local rf = io.open("/tmp/blocklist_dhcp", "r")
-	if rf then existing = rf:read("*a") or ""; rf:close() end
-	if not existing:find(dhcp_mac, 1, true) then
-		local bf = io.open("/tmp/blocklist_dhcp", "a")
-		if bf then bf:write(dhcp_mac.."\n"); bf:close() end
+	local BLOCKLIST = "/tmp/blocklist_dhcp"
+	local tmp_bl = BLOCKLIST .. ".tmp." .. tostring(os.time()) .. tostring(math.random(10000))
+	local existing_lines = {}
+	local already_present = false
+	local rf = io.open(BLOCKLIST, "r")
+	if rf then
+		for line in rf:lines() do
+			if line ~= "" then
+				existing_lines[#existing_lines + 1] = line
+				if line == dhcp_mac then already_present = true end
+			end
+		end
+		rf:close()
+	end
+	if not already_present then
+		existing_lines[#existing_lines + 1] = dhcp_mac
+		local wf = io.open(tmp_bl, "w")
+		if wf then
+			for _, l in ipairs(existing_lines) do wf:write(l .. "\n") end
+			wf:close()
+			nixio.fs.rename(tmp_bl, BLOCKLIST)
+		end
 	end
 
 	http.write_json({ success = true, message = "Device " .. mac .. " has been blocked" })
@@ -205,19 +247,24 @@ function action_unblock_device()
 	sys.exec("iptables -D INPUT -m mac --mac-source " .. mac .. " -j DROP 2>/dev/null")
 	sys.exec("ip6tables -D INPUT -m mac --mac-source " .. mac .. " -j DROP 2>/dev/null")
 
-	-- [H3] 从 blocklist_dhcp 中删除对应条目，防止重启 dnsmasq 后重新屏蔽
+	-- H-2/H-3: 原子写回，消除 unblock 时的竞态
 	local dhcp_mac = mac:gsub(":", "")
-	local rf2 = io.open("/tmp/blocklist_dhcp", "r")
+	local BLOCKLIST = "/tmp/blocklist_dhcp"
+	local tmp_bl = BLOCKLIST .. ".tmp." .. tostring(os.time()) .. tostring(math.random(10000))
+	local rf2 = io.open(BLOCKLIST, "r")
 	if rf2 then
 		local lines = {}
 		for line in rf2:lines() do
-			if line ~= dhcp_mac then table.insert(lines, line) end
+			if line ~= "" and line ~= dhcp_mac then
+				lines[#lines + 1] = line
+			end
 		end
 		rf2:close()
-		local wf2 = io.open("/tmp/blocklist_dhcp", "w")
+		local wf2 = io.open(tmp_bl, "w")
 		if wf2 then
-			for _, l in ipairs(lines) do wf2:write(l.."\n") end
+			for _, l in ipairs(lines) do wf2:write(l .. "\n") end
 			wf2:close()
+			nixio.fs.rename(tmp_bl, BLOCKLIST)
 		end
 	end
 
@@ -297,15 +344,17 @@ function action_device_detail()
 		local ping_result = sys.exec("ping -c 1 -W 1 " .. ip .. " 2>&1 | tail -1")
 		detail.reachable = ping_result and ping_result:match("time=") ~= nil
 
-		local arping = sys.exec("arping -c 1 -I br-lan " .. ip .. " 2>&1 | grep reply")
+		local arp_dev = lan_arp_if()
+		local arping = sys.exec("arping -c 1 -I " .. arp_dev .. " " .. ip .. " 2>&1 | grep reply")
 		detail.arping_response = arping ~= ""
 	else
 		detail.reachable = false
 		detail.arping_response = false
 	end
 
-	-- [H2] conntrack 使用 MAC 过滤，MAC 已验证格式
-	local conntrack = sys.exec("conntrack -L 2>/dev/null | grep -i " .. mac .. " | wc -l")
+	-- H-3: conntrack 不按 MAC 过滤（conntrack 条目不含 MAC），改为统计所有 ESTABLISHED 连接数
+	-- 原 grep -i mac 会误匹配 IP 地址片段，且 conntrack 输出本身不含 MAC 字段
+	local conntrack = sys.exec("conntrack -L 2>/dev/null | wc -l")
 	detail.active_connections = tonumber(conntrack) or 0
 
 	local vendor = get_vendor(mac)
@@ -320,6 +369,15 @@ function is_blocked(mac, u)
 	return blocked == "1" or blocked == "true" or blocked == "yes"
 end
 
+local function iwinfo_essid(iface)
+	local info = sys.exec("iwinfo " .. iface .. " info 2>/dev/null") or ""
+	local q = info:match('ESSID:%s*"(.-)"')
+	if q and q ~= "" then return q end
+	local u = info:match("ESSID:%s*(%S+)")
+	if u and u ~= "" and u ~= "unknown" then return u end
+	return nil
+end
+
 function get_wifi_clients()
 	local clients = {}
 
@@ -328,6 +386,7 @@ function get_wifi_clients()
 		for iface in wifi_status:gmatch("%S+") do
 			-- [M8] 验证接口名格式，防止含特殊字符时注入 shell
 			if not iface:match("^[%w]+$") then goto continue end
+			local ssid = iwinfo_essid(iface) or iface
 			local station_dump = sys.exec("iwinfo " .. iface .. " assoclist 2>/dev/null")
 			if station_dump then
 				for mac, info in station_dump:gmatch("(%x%x:%x%x:%x%x:%x%x:%x%x:%x%x)%s+(.+)") do
@@ -336,7 +395,7 @@ function get_wifi_clients()
 					local rssi = info:match("RSSI:(%-?%d+)") or signal
 					local txrate = info:match("Tx Rate:(%S+)") or "?"
 					clients[mac] = {
-						ssid = iface,
+						ssid = ssid,
 						signal = signal,
 						rssi = rssi,
 						tx_rate = txrate,

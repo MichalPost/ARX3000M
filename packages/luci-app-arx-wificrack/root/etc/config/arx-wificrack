@@ -1,3 +1,8 @@
 
 config main 'main'
 	option enabled '1'
+
+config evil_twin 'evil_twin'
+	option max_runtime '1800'
+	option deauth_interval '5'
+	option deauth_burst '3'

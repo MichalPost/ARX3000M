@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evil Twin — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.et-banner{display:flex;align-items:flex-start;gap:13px;padding:15px 18px;background:linear-gradient(135deg,rgba(239,68,68,.12),rgba(239,68,68,.04));border:1px solid rgba(239,68,68,.28);border-radius:var(--r-lg);margin-bottom:14px}
+.et-ico{width:42px;height:42px;flex-shrink:0;background:linear-gradient(135deg,#ef4444,#dc2626);border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff}
+.et-txt{font-size:13px;color:var(--text2);line-height:1.6}
+.et-cfg{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:700px){.et-cfg{grid-template-columns:1fr}}
+.et-field{margin-bottom:11px}
+.et-field label{display:block;font-size:12px;color:var(--text3);margin-bottom:4px}
+.et-inp{width:100%;padding:7px 11px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-input);color:var(--text1);font-size:13px;outline:none;transition:.15s}
+.et-inp:focus{border-color:rgba(239,68,68,.5)}
+.et-wifi-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:11px 14px;background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--sc,var(--border));border-radius:var(--r-md);margin-bottom:7px;transition:.15s}
+.et-wifi-row:hover{border-color:rgba(239,68,68,.35);transform:translateY(-1px)}
+.cred-row{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:10px 13px;background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--danger);border-radius:var(--r-md);margin-bottom:6px}
+.cred-pw{font-family:ui-monospace,monospace;font-size:14px;font-weight:700}
+.cred-time{font-size:11px;color:var(--text3);margin-top:2px}
+.panel-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;flex-wrap:wrap;gap:7px}
+.panel-hd h2{font-size:15px;font-weight:600}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">工具 / <span>Evil Twin 钓鱼 AP</span></div>
+    <div class="topbar-r">
+      <span id="et-topbar-status" style="font-size:12px;color:var(--text3)">⏸ 未启动</span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>🎣 Evil Twin 钓鱼 AP</h1>
+      <div class="page-sub">伪造同名开放 AP，持续 deauth 目标，捕获受害者输入的 WiFi 密码。仅限授权测试。</div>
+    </div>
+
+    <!-- Banner -->
+    <div class="et-banner ani">
+      <div class="et-ico">🎣</div>
+      <div class="et-txt"><strong>工作流程：</strong>扫描选定目标 AP → 启动同名开放假 AP + 持续 deauth → 客户端连入后 DNS 全劫持弹出认证页 → 捕获输入的密码。⚠️ 本工具仅供授权渗透测试使用，未经授权使用可能违法。</div>
+    </div>
+
+    <!-- Config + Status -->
+    <div class="et-cfg ani">
+      <div class="card" style="margin-bottom:0">
+        <div class="card-title">🎯 目标 AP 配置</div>
+        <div class="et-field"><label>SSID（WiFi 名称）</label><input type="text" id="et-ssid" class="et-inp" placeholder="从下方扫描结果选择" maxlength="32" readonly></div>
+        <div class="et-field"><label>BSSID（MAC 地址）</label><input type="text" id="et-bssid" class="et-inp" placeholder="XX:XX:XX:XX:XX:XX" maxlength="17" readonly></div>
+        <div class="et-field"><label>信道</label><input type="number" id="et-channel" class="et-inp" value="6" min="1" max="196" style="max-width:100px"></div>
+        <div class="et-field">
+          <label style="display:flex;align-items:flex-start;gap:7px;cursor:pointer;font-weight:400">
+            <input type="checkbox" id="et-use-hash" style="margin-top:3px;flex-shrink:0">
+            <span>使用 capture.22000 做密码校验（存在时推荐开启）</span>
+          </label>
+        </div>
+        <div class="et-field">
+          <label style="display:flex;align-items:flex-start;gap:7px;cursor:pointer;font-weight:400;color:var(--danger)">
+            <input type="checkbox" id="et-auth-ack" style="margin-top:3px;flex-shrink:0">
+            <span>本人确认在<strong>书面授权</strong>范围内测试，或仅对<strong>自有/实验室网络</strong>做安全验证</span>
+          </label>
+        </div>
+      </div>
+      <div class="status-panel ani" id="et-status-panel" style="margin-bottom:0">
+        <div class="card-title">📡 运行状态</div>
+        <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <span class="badge b-p" id="et-badge">⏸ 未启动</span>
+          <span style="font-size:13px;color:var(--text3)" id="et-status-text">选择目标后启动</span>
+        </div>
+        <div id="et-latest-cred" style="display:none;margin-top:11px;padding:10px 13px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:var(--r-md)">
+          <div style="font-size:11px;color:#ef4444;font-weight:600;margin-bottom:3px">🔑 最新捕获</div>
+          <div id="et-latest-pw" style="font-family:ui-monospace,monospace;font-size:15px;font-weight:700"></div>
+          <div id="et-latest-time" style="font-size:11px;color:var(--text3);margin-top:2px"></div>
+        </div>
+        <div id="et-extra" style="display:none;margin-top:9px;font-size:12px;color:var(--text3);line-height:1.5"></div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex;flex-wrap:wrap;gap:9px;margin-bottom:14px" class="ani">
+      <button class="btn btn-p" id="et-btn-scan" onclick="etScan()">🔍 扫描 WiFi</button>
+      <button class="btn" id="et-btn-start" style="display:none;background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none;box-shadow:0 2px 8px rgba(239,68,68,.3)" onclick="etStart()">🎣 启动 Evil Twin</button>
+      <button class="btn btn-g" id="et-btn-stop" style="display:none" onclick="etStop()">⏹ 停止</button>
+      <button class="btn btn-d" id="et-btn-clear" style="display:none" onclick="etClear()">🗑 清除凭据</button>
+    </div>
+
+    <!-- WiFi List -->
+    <div class="card ani" id="et-wifi-section" style="display:none">
+      <div class="panel-hd"><h2>周围 WiFi</h2><span style="font-size:12px;color:var(--text3)">点击目标网络自动填入上方配置</span></div>
+      <div id="et-wifi-list"></div>
+    </div>
+
+    <!-- Creds -->
+    <div class="card ani">
+      <div class="panel-hd">
+        <h2>捕获的密码</h2>
+        <button class="btn btn-g btn-sm" onclick="ARX.toast('已刷新','success')">🔄 刷新</button>
+      </div>
+      <div id="et-creds-list"><div class="empty">暂无捕获记录</div></div>
+    </div>
+
+    <!-- Log -->
+    <div class="card ani" id="et-log-section" style="display:none">
+      <div class="panel-hd"><h2>运行日志</h2></div>
+      <pre class="log-pre" id="et-log"></pre>
+    </div>
+  </div>
+</div>
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+var ET = { running:false, bssid:'', ssid:'', timer:null, elapsed:0, creds:[] };
+var NETS = [
+  {ssid:'HomeNetwork_5G',bssid:'AA:BB:CC:11:22:33',signal:-42,ch:149,sec:'WPA2'},
+  {ssid:'TP-LINK_2.4G',  bssid:'D8:07:B6:44:55:66',signal:-58,ch:6,  sec:'WPA2'},
+  {ssid:'CMCC-Home',     bssid:'FC:D7:33:77:88:99',signal:-65,ch:11, sec:'WPA'},
+  {ssid:'iPhone热点',    bssid:'3E:1A:2B:AA:BB:CC',signal:-72,ch:1,  sec:'WPA2'},
+  {ssid:'Xiaomi_AX6000', bssid:'60:A4:B7:00:11:22',signal:-51,ch:100,sec:'WPA2'},
+];
+var MOCK_PWS = ['MyWifi@2024','HomePass123','Router#2025','Wifi_Secret!','P@ssw0rd88'];
+
+function sc(s){ return s>-60?'var(--success)':s>-75?'var(--warning)':'var(--danger)'; }
+function sb(s){ return s>-60?'▂▄▆█':s>-75?'▂▄▆_':'▂▄__'; }
+
+function etScan() {
+  var btn = document.getElementById('et-btn-scan');
+  btn.disabled=true; btn.textContent='🔄 扫描中...';
+  setTimeout(function() {
+    btn.disabled=false; btn.textContent='🔍 扫描 WiFi';
+    var list = document.getElementById('et-wifi-list');
+    list.innerHTML = NETS.map(function(n) {
+      var c = sc(n.signal);
+      return '<div class="et-wifi-row" style="--sc:'+c+'">'
+        +'<div style="display:flex;align-items:center;gap:11px;min-width:0">'
+        +'<span style="font-family:monospace;font-size:16px;color:'+c+';letter-spacing:1px">'+sb(n.signal)+'</span>'
+        +'<div><div style="font-weight:600;font-size:13px">'+n.ssid+' <span class="badge '+(n.sec==='WPA2'?'b-s':'b-p')+'" style="font-size:10px">'+n.sec+'</span></div>'
+        +'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+n.bssid+' · 信道 '+n.ch+' · '+n.signal+' dBm</div></div>'
+        +'</div>'
+        +'<button class="btn btn-sm" style="background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border:none" onclick="etSelect(\''+n.bssid+'\',\''+n.ssid+'\','+n.ch+')">🎯 选择目标</button>'
+        +'</div>';
+    }).join('');
+    document.getElementById('et-wifi-section').style.display='';
+    ARX.toast('发现 '+NETS.length+' 个 WiFi','success');
+  }, 1200);
+}
+
+function etSelect(bssid, ssid, ch) {
+  document.getElementById('et-ssid').value = ssid;
+  document.getElementById('et-bssid').value = bssid;
+  document.getElementById('et-channel').value = ch;
+  ET.bssid=bssid; ET.ssid=ssid;
+  document.getElementById('et-btn-start').style.display='';
+  document.getElementById('et-wifi-section').style.display='none';
+  ARX.toast('已选择目标：'+ssid,'success');
+}
+
+function etStart() {
+  if (!ET.ssid) { ARX.toast('请先选择目标 AP','danger'); return; }
+  if (!document.getElementById('et-auth-ack').checked) { ARX.toast('请勾选授权确认','danger'); return; }
+  if (!confirm('确定对 "'+ET.ssid+'" 启动 Evil Twin 攻击？\n\n本机 WiFi 将短暂中断，仅限授权测试使用。')) return;
+  ET.running=true; ET.elapsed=0;
+  document.getElementById('et-badge').className='badge b-d';
+  document.getElementById('et-badge').textContent='🔴 运行中';
+  document.getElementById('et-status-text').textContent='正在钓鱼，等待受害者连接...';
+  document.getElementById('et-status-panel').classList.add('running');
+  document.getElementById('et-btn-scan').style.display='none';
+  document.getElementById('et-btn-start').style.display='none';
+  document.getElementById('et-btn-stop').style.display='';
+  document.getElementById('et-log-section').style.display='';
+  document.getElementById('et-topbar-status').textContent='🔴 运行中';
+  document.getElementById('et-topbar-status').style.color='var(--danger)';
+  var log = document.getElementById('et-log');
+  log.textContent='[INFO] Starting hostapd with SSID: '+ET.ssid+'\n[INFO] Starting dnsmasq for captive portal\n[INFO] Starting deauth against '+ET.bssid;
+  ET.timer = setInterval(function() {
+    ET.elapsed++;
+    log.textContent += '\n['+new Date().toLocaleTimeString()+'] Sending deauth frames... elapsed '+ET.elapsed+'s';
+    log.scrollTop = log.scrollHeight;
+    // 10秒后模拟捕获密码
+    if (ET.elapsed === 10) {
+      var pw = MOCK_PWS[Math.floor(Math.random()*MOCK_PWS.length)];
+      var t = new Date().toLocaleString('zh-CN');
+      ET.creds.push({pw:pw, time:t});
+      log.textContent += '\n['+new Date().toLocaleTimeString()+'] *** PASSWORD CAPTURED: '+pw+' ***';
+      document.getElementById('et-latest-pw').textContent = pw;
+      document.getElementById('et-latest-time').textContent = t;
+      document.getElementById('et-latest-cred').style.display='';
+      document.getElementById('et-btn-clear').style.display='';
+      renderCreds();
+      ARX.toast('🔑 捕获密码：'+pw,'danger');
+    }
+  }, 1000);
+  ARX.toast('Evil Twin 已启动：'+ET.ssid,'danger');
+}
+
+function etStop() {
+  clearInterval(ET.timer); ET.running=false;
+  document.getElementById('et-status-panel').classList.remove('running');
+  document.getElementById('et-badge').className='badge b-m';
+  document.getElementById('et-badge').textContent='⏸ 已停止';
+  document.getElementById('et-status-text').textContent = ET.creds.length>0 ? '已捕获 '+ET.creds.length+' 条密码' : '未运行';
+  document.getElementById('et-btn-scan').style.display='';
+  document.getElementById('et-btn-stop').style.display='none';
+  document.getElementById('et-topbar-status').textContent='⏸ 已停止';
+  document.getElementById('et-topbar-status').style.color='var(--text3)';
+  ARX.toast('Evil Twin 已停止','success');
+}
+
+function etClear() {
+  if (!confirm('确定清除所有捕获的密码记录？')) return;
+  ET.creds=[];
+  document.getElementById('et-latest-cred').style.display='none';
+  document.getElementById('et-btn-clear').style.display='none';
+  renderCreds();
+  ARX.toast('已清除','success');
+}
+
+function renderCreds() {
+  var el = document.getElementById('et-creds-list');
+  if (!ET.creds.length) { el.innerHTML='<div class="empty">暂无捕获记录</div>'; return; }
+  el.innerHTML = ET.creds.slice().reverse().map(function(c,i) {
+    return '<div class="cred-row">'
+      +'<div><div class="cred-pw">'+c.pw+'</div><div class="cred-time">'+c.time+'</div></div>'
+      +'<div style="display:flex;gap:7px;align-items:center">'
+      +'<span class="badge b-d" style="font-size:11px">已捕获</span>'
+      +'<button class="btn btn-g btn-sm" onclick="navigator.clipboard&&navigator.clipboard.writeText(\''+c.pw+'\');ARX.toast(\'已复制\',\'success\')">📋 复制</button>'
+      +'</div></div>';
+  }).join('');
+}
+</script>
+</body>
+</html>

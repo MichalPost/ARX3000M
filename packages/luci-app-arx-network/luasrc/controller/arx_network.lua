@@ -4,7 +4,7 @@ local uci = require "luci.model.uci"
 local nixio = require "nixio"
 module("luci.controller.arx.network", package.seeall)
 
--- [C1] 验证主机名/IP，防止命令注入
+-- [C1] 验证主机名/IP，防止命令注入（主机名用 LDH：字母数字点横线，不含 Lua %w 中的下划线）
 local function validate_host(h)
 	if not h or h == "" then return false end
 	if h:match("^%d+%.%d+%.%d+%.%d+$") then
@@ -12,7 +12,11 @@ local function validate_host(h)
 		a,b,c,d = tonumber(a),tonumber(b),tonumber(c),tonumber(d)
 		return a<=255 and b<=255 and c<=255 and d<=255
 	end
-	return #h <= 253 and h:match("^[%w%.%-]+$") ~= nil
+	-- L-4: 纯数字字符串不是合法主机名，必须至少含一个字母或点
+	if h:match("^%d+$") then return false end
+	-- 非 IPv4 的主机名须含至少一个字母，拒绝 "1.2" 等纯数字加点横线串
+	if not h:match("%a") then return false end
+	return #h <= 253 and h:match("^[%a%d%.%-]+$") ~= nil
 end
 
 -- [C1] 验证 ping count，限制 1-10
@@ -131,8 +135,8 @@ function action_diag_netstat()
 	http.prepare_content("application/json")
 	local connections = {}
 
-	local netstat_output = sys.exec("netstat -tn 2>/dev/null | grep ESTABLISHED | head -50") or ""
-	for line in netstat_output:gmatch("[^\r\n]+") do
+	local function parse_line(line)
+		-- netstat: tcp 0 0 local remote ESTABLISHED
 		local proto, recv_q, send_q, local_addr, remote_addr, state =
 			line:match("(%S+)%s+(%d+)%s+(%d+)%s+(%S+)%s+(%S+)%s+(%S+)")
 		if proto then
@@ -144,7 +148,29 @@ function action_diag_netstat()
 				recv_q = recv_q,
 				send_q = send_q
 			})
+			return
 		end
+		-- ss: ESTAB 0 0 local peer（无独立 proto 列）
+		local st, rq, sq, la, ra = line:match("^(%S+)%s+(%d+)%s+(%d+)%s+(%S+)%s+(%S+)%s*$")
+		if st and la then
+			table.insert(connections, {
+				proto = "tcp",
+				local_addr = la,
+				remote_addr = ra,
+				state = st,
+				recv_q = rq,
+				send_q = sq
+			})
+		end
+	end
+
+	-- 优先 ss（BusyBox/OpenWrt 上列更稳定），回退 netstat + grep
+	local raw = sys.exec("command -v ss >/dev/null 2>&1 && ss -H -tn state established 2>/dev/null | head -50") or ""
+	if raw == "" or not raw:match("%S") then
+		raw = sys.exec("netstat -tn 2>/dev/null | grep ESTABLISHED | head -50") or ""
+	end
+	for line in raw:gmatch("[^\r\n]+") do
+		parse_line(line)
 	end
 
 	http.write_json({ connections = connections, total = #connections })
@@ -183,7 +209,7 @@ function action_diag_bundle()
 	add("wan (ifstatus)", sys.exec("ifstatus wan 2>/dev/null"))
 	add("ubus wan", sys.exec("ubus call network.interface.wan status 2>/dev/null"))
 	add("logread (tail)", sys.exec("logread -l 50 2>/dev/null"))
-	add("dmesg (tail)", sys.exec("dmesg 2>/dev/null | tail -n 35"))
+	add("dmesg (tail)", sys.exec("dmesg 2>/dev/null | tail -c 8192"))
 	add("routes", sys.exec("ip route 2>/dev/null | head -40"))
 	http.write(table.concat(chunks, ""))
 end

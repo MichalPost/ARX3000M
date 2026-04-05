@@ -2,6 +2,7 @@ local sys = require "luci.sys"
 local http = require "luci.http"
 local uci = require "luci.model.uci"
 local nixio = require "nixio"
+local dsp = require "luci.dispatcher"
 
 module("luci.controller.arx.dashboard", package.seeall)
 
@@ -28,21 +29,87 @@ entry({"admin", "arx-dashboard", "wifi_rssi"}, template("arx-dashboard/wifi_rssi
 entry({"admin", "arx-dashboard", "wifi_rssi_data"}, call("action_wifi_rssi_data")).leaf = true
 entry({"admin", "arx-dashboard", "recovery"}, template("arx-dashboard/recovery"), _("恢复说明"), 30).leaf = true
 entry({"admin", "arx-dashboard", "dns_chain"}, template("arx-dashboard/dns_chain"), _("DNS 解析链"), 31).leaf = true
+entry({"admin", "arx-dashboard", "adguard_openclash"}, template("arx-dashboard/adguard_openclash"), _("AdGuard + OpenClash"), 32).leaf = true
+entry({"admin", "arx-dashboard", "adguard_oc_apply"}, call("action_adguard_oc_apply")).leaf = true
+end
+
+-- AdGuard（非 53）作为 dnsmasq 上游、OpenClash DNS（默认 7874）作为 AdGuard 上游时的端口校验
+local function validate_adguard_upstream_port(p)
+	local n = tonumber(p)
+	if not n or n < 1 or n > 65535 then return nil end
+	if n == 53 then return nil end
+	return n
+end
+
+local function first_dhcp_dnsmasq_section(cur)
+	local section
+	cur:foreach("dhcp", "dnsmasq", function(s)
+		if not section then section = s[".name"] end
+	end)
+	return section
+end
+
+local function normalize_uci_list(val)
+	if not val then return {} end
+	if type(val) == "table" then return val end
+	return { val }
+end
+
+function action_adguard_oc_apply()
+	local base = dsp.build_url("admin/arx-dashboard/adguard_openclash")
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
+		http.status(405, "Method Not Allowed")
+		http.write("Method Not Allowed")
+		return
+	end
+	local act = http.formvalue("arx_oc_action") or "add"
+	local adg = validate_adguard_upstream_port(http.formvalue("adg_port"))
+	if not adg then
+		http.redirect(base .. "?err=badport")
+		return
+	end
+	local cur = uci.cursor()
+	local section = first_dhcp_dnsmasq_section(cur)
+	if not section then
+		http.redirect(base .. "?err=nodnsmasq")
+		return
+	end
+	local want = "127.0.0.1#" .. tostring(adg)
+	if act == "remove" then
+		cur:del_list("dhcp", section, "server", want)
+		cur:commit("dhcp")
+		sys.call("/etc/init.d/dnsmasq restart >/dev/null 2>&1")
+		http.redirect(base .. "?applied=remove")
+		return
+	end
+	local lst = normalize_uci_list(cur:get_list("dhcp", section, "server"))
+	local exists = false
+	for _, v in ipairs(lst) do
+		if v == want then exists = true break end
+	end
+	if not exists then
+		cur:add_list("dhcp", section, "server", want)
+		cur:commit("dhcp")
+		sys.call("/etc/init.d/dnsmasq restart >/dev/null 2>&1")
+	end
+	http.redirect(base .. "?applied=add")
 end
 
 local function service_running_short(name)
+	if not name or not name:match("^[%w_%-]+$") then return false end
 	-- [S3] 使用 pgrep -x 精确匹配进程名，避免 pgrep -f 拼接单引号时潜在注入
 	local init_status = sys.exec("/etc/init.d/" .. name .. " status 2>&1 | grep running")
 	if init_status and init_status ~= "" then return true end
 	local pgrep = sys.exec("pgrep -x " .. name .. " | head -1 2>/dev/null")
 	if pgrep and pgrep:match("%S") then return true end
-	-- 对于进程名与服务名不同的情况（如 openclash/passwall），回退到 pgrep -f 但用 --
-	local pgrep2 = sys.exec("pgrep -f -- " .. name .. " | head -1 2>/dev/null")
+	-- 对于进程名与服务名不同的情况（如 openclash/passwall），回退到 pgrep -f
+	-- 用 grep -Fx 精确全词匹配，避免 passwall 误匹配 passwall2
+	local pgrep2 = sys.exec("pgrep -f '" .. name .. "' 2>/dev/null | head -1")
 	return pgrep2 and pgrep2:match("%S") ~= nil
 end
 
--- [LOW-2] service_running_by_name 与 service_running_short 完全相同，统一使用后者
-local service_running_by_name = service_running_short
+-- L-1: 移除冗余别名，统一使用 service_running_short
+local service_running_by_name = service_running_short  -- kept for call-site compatibility
 
 local function init_unit_enabled(name)
 	if sys.init and sys.init.enabled then
@@ -60,7 +127,6 @@ local DASHBOARD_SERVICES = {
 	{ name = "dropbear",    desc = "SSH 服务" },
 	{ name = "uhttpd",      desc = "Web 管理界面" },
 	{ name = "samba4",      desc = "文件共享 (SMB)" },
-	{ name = "docker",      desc = "Docker 引擎" },
 	{ name = "nginx",       desc = "Web 服务器" },
 	{ name = "adguardhome", desc = "广告过滤" },
 	{ name = "cron",        desc = "定时任务" },
@@ -119,7 +185,7 @@ total = meminfo.total,
 free = meminfo.free,
 buffered = meminfo.buffers or 0,
 shared = meminfo.shared or 0,
-used = (meminfo.total - meminfo.free - (meminfo.buffers or 0) - (meminfo.cached or 0)),
+used = math.max(0, meminfo.total - meminfo.free - (meminfo.buffers or 0) - (meminfo.cached or 0)),
 cached = meminfo.cached or 0
 }
 info.cpu = get_cpu_usage()
@@ -193,16 +259,6 @@ local function storage_roles_for_mount(u, mount_point)
 	local logf = u:get_first("system", "system", "log_file") or ""
 	if logf ~= "" and logf:sub(1, #mount_point) == mount_point and (logf:sub(#mount_point + 1, #mount_point + 1) == "" or logf:sub(#mount_point + 1, #mount_point + 1) == "/") then
 		table.insert(roles, "syslog")
-	end
-	if nixio.fs.access("/etc/config/dockerd") then
-		pcall(function()
-			u:foreach("dockerd", "globals", function(s)
-				local dr = s.data_root or s.data_dir
-				if dr and dr:sub(1, #mount_point) == mount_point and (dr:sub(#mount_point + 1, #mount_point + 1) == "" or dr:sub(#mount_point + 1, #mount_point + 1) == "/") then
-					table.insert(roles, "docker")
-				end
-			end)
-		end)
 	end
 	if nixio.fs.access("/etc/config/fstab") then
 		pcall(function()
@@ -338,6 +394,21 @@ end
 
 function get_interface_stats()
 local interfaces = {}
+local uc = uci.cursor()
+local lan_bridge = nil
+local lan_dev = uc:get("network", "lan", "device") or uc:get("network", "lan", "ifname") or ""
+lan_dev = tostring(lan_dev or ""):gsub("^%s+", ""):gsub("%s+$", "")
+if lan_dev:match("^br%-") then
+	lan_bridge = lan_dev
+else
+	for part in lan_dev:gmatch("%S+") do
+		if part:match("^br%-") then
+			lan_bridge = part
+			break
+		end
+	end
+end
+if not lan_bridge then lan_bridge = "br-lan" end
 local ifaces = sys.net.devices()
 if ifaces then
 -- [M3] 一次性解析 /proc/net/dev，避免对每个接口重复打开文件（O(n²) → O(n)）
@@ -361,7 +432,8 @@ end
 stats_file:close()
 end
 for _, iface in ipairs(ifaces) do
-if iface ~= "lo" and iface:sub(1,3) ~= "br-" then
+-- B-4: 仅排除 LAN 桥（通常为 br-lan），保留 br-wan 等以便 WAN 统计可见
+if iface ~= "lo" and iface ~= lan_bridge then
 local s = dev_stats[iface] or {rx_bytes=0,rx_packets=0,tx_bytes=0,tx_packets=0}
 local ipv4 = sys.exec("ip -4 addr show " .. iface .. " scope global 2>/dev/null | grep inet | awk '{print $2}' | head -1") or ""
 local mac  = sys.exec("cat /sys/class/net/" .. iface .. "/address 2>/dev/null") or ""
@@ -508,22 +580,21 @@ function action_network_health()
 	end
 
 	local wan_up, wan_ip = false, ""
-	local ifs = get_interface_stats()
-	-- [MED-6] PPPoE 虚拟接口名由 netifd 按 UCI section 名命名（pppoe-wan），不是按设备名
-	-- 同时保留物理设备名匹配作为兜底
+	-- M-6: 不依赖 get_interface_stats()（它过滤了 br- 前缀），直接用 ip 命令查询
+	-- 候选接口：UCI wan device、pppoe-wan、"wan" 字面名
 	local wan_proto = u:get("network", "wan", "proto") or ""
 	local wan_dev = u:get("network", "wan", "ifname") or u:get("network", "wan", "device") or ""
-	-- pppoe 虚拟接口固定为 pppoe-<section名>，即 pppoe-wan
 	local pppoe_iface = wan_proto == "pppoe" and "pppoe-wan" or nil
-	for _, iface in ipairs(ifs) do
-		local match = iface.name == "wan"
-			or (wan_dev ~= "" and iface.name == wan_dev)
-			or (pppoe_iface and iface.name == pppoe_iface)
-		if match then
-			local ip = iface.ipv4 or ""
-			if ip ~= "" then
+	local candidates = { "wan" }
+	if wan_dev ~= "" then candidates[#candidates+1] = wan_dev end
+	if pppoe_iface then candidates[#candidates+1] = pppoe_iface end
+	for _, cand in ipairs(candidates) do
+		if cand ~= "" then
+			local ip_out = sys.exec("ip -4 addr show dev " .. cand .. " scope global 2>/dev/null | grep inet | awk '{print $2}' | head -1") or ""
+			ip_out = ip_out:gsub("%s+$", "")
+			if ip_out ~= "" then
 				wan_up = true
-				wan_ip = ip
+				wan_ip = ip_out
 				break
 			end
 		end
@@ -643,10 +714,9 @@ function action_ipv6_status()
 	local dhcpv6 = u:get("dhcp", "lan", "dhcpv6") or "server"
 	if ra == "disabled" and (dhcpv6 == "disabled" or dhcpv6 == "none") then
 		out.dhcpv6 = cell("na", "LAN RA/DHCPv6 已关闭")
-	elseif ra ~= "disabled" or (dhcpv6 ~= "disabled" and dhcpv6 ~= "none") then
-		out.dhcpv6 = cell("ok", "RA=" .. tostring(ra) .. " DHCPv6=" .. tostring(dhcpv6))
 	else
-		out.dhcpv6 = cell("warn", "请检查 dhcp.lan")
+		-- B-3: 原 elseif 条件与首个 if 互补，else 分支是死代码；统一为 else
+		out.dhcpv6 = cell("ok", "RA=" .. tostring(ra) .. " DHCPv6=" .. tostring(dhcpv6))
 	end
 
 	local ula = u:get("network", "globals", "ula_prefix") or ""
@@ -725,44 +795,7 @@ function action_mesh_status()
 	http.write_json(out)
 end
 
-function action_wifi_env()
-	http.prepare_content("application/json")
-	local res = { interfaces = {} }
-	local iw = sys.exec("iw dev 2>/dev/null") or ""
-	local cur_if, ssid, mode, ch, width = nil, nil, nil, nil, nil
-	for line in iw:gmatch("[^\r\n]+") do
-		local ifn = line:match("^%s*Interface%s+(%S+)")
-		if ifn then
-			if cur_if and mode == "AP" then
-				table.insert(res.interfaces, { ifname = cur_if, ssid = ssid or "", channel = ch, bandwidth = width or "", mode = mode })
-			end
-			cur_if, ssid, mode, ch, width = ifn, nil, nil, nil, nil
-		end
-		if cur_if then
-			local s = line:match("%s*ssid%s+(.+)$")
-			if s then ssid = s:gsub("^%s+", ""):gsub("%s+$", "") end
-			local t = line:match("%s*type%s+(%S+)")
-			if t then mode = t end
-			local c = line:match("channel%s+(%d+)")
-			if c then ch = c end
-			local w = line:match("width%s+(%d+)%s+MHz")
-			if w then width = w .. " MHz" end
-		end
-	end
-	if cur_if and mode == "AP" then
-		table.insert(res.interfaces, { ifname = cur_if, ssid = ssid or "", channel = ch, bandwidth = width or "", mode = mode })
-	end
-	if #res.interfaces == 0 and nixio.fs.access("/usr/bin/iwinfo") then
-		local lst = sys.exec("iwinfo 2>/dev/null | awk '/^wlan|^phy/{print $1}' | head -4") or ""
-		for ifn in lst:gmatch("%S+") do
-			local info = sys.exec("iwinfo " .. ifn .. " info 2>/dev/null") or ""
-			local ch2 = info:match("Channel:%s*(%d+)")
-			local essid = info:match('ESSID:%s*"([^"]*)"') or info:match("ESSID:%s*'([^']*)'") or info:match("ESSID:%s*(%S+)")
-			table.insert(res.interfaces, { ifname = ifn, ssid = essid or "", channel = ch2, bandwidth = "", mode = "AP?" })
-		end
-	end
-	http.write_json(res)
-end
+-- M-4: 辅助函数统一放在 action_wifi_env / action_wifi_rssi_data 之前，消除前向引用问题
 
 local function arx_safe_ifname(ifn)
 	return type(ifn) == "string" and ifn:match("^[%w%.%-]+$") ~= nil
@@ -802,17 +835,18 @@ local function arx_parse_iwinfo_info(ifn)
 	}
 end
 
+-- M-4: 单一权威的 AP 接口枚举函数，action_wifi_env 和 action_wifi_rssi_data 共用
 local function arx_list_ap_ifaces_wifi_env_style()
 	local res = {}
 	local iw = sys.exec("iw dev 2>/dev/null") or ""
-	local cur_if, ssid, mode, ch = nil, nil, nil, nil
+	local cur_if, ssid, mode, ch, width = nil, nil, nil, nil, nil
 	for line in iw:gmatch("[^\r\n]+") do
 		local ifn = line:match("^%s*Interface%s+(%S+)")
 		if ifn then
 			if cur_if and mode == "AP" then
-				table.insert(res, { ifname = cur_if, ssid = ssid or "", channel = ch })
+				table.insert(res, { ifname = cur_if, ssid = ssid or "", channel = ch, bandwidth = width or "", mode = mode })
 			end
-			cur_if, ssid, mode, ch = ifn, nil, nil, nil
+			cur_if, ssid, mode, ch, width = ifn, nil, nil, nil, nil
 		end
 		if cur_if then
 			local s = line:match("%s*ssid%s+(.+)$")
@@ -821,18 +855,37 @@ local function arx_list_ap_ifaces_wifi_env_style()
 			if t then mode = t end
 			local c = line:match("channel%s+(%d+)")
 			if c then ch = c end
+			local w = line:match("width%s+(%d+)%s+MHz")
+			if w then width = w .. " MHz" end
 		end
 	end
 	if cur_if and mode == "AP" then
-		table.insert(res, { ifname = cur_if, ssid = ssid or "", channel = ch })
+		table.insert(res, { ifname = cur_if, ssid = ssid or "", channel = ch, bandwidth = width or "", mode = mode })
 	end
 	if #res == 0 and nixio.fs.access("/usr/bin/iwinfo") then
 		local lst = sys.exec("iwinfo 2>/dev/null | awk '/^wlan|^phy/{print $1}' | head -8") or ""
 		for ifn in lst:gmatch("%S+") do
-			table.insert(res, { ifname = ifn, ssid = "", channel = nil })
+			table.insert(res, { ifname = ifn, ssid = "", channel = nil, bandwidth = "", mode = "AP?" })
 		end
 	end
 	return res
+end
+
+function action_wifi_env()
+	http.prepare_content("application/json")
+	local res = { interfaces = {} }
+	-- M-4: 复用 arx_list_ap_ifaces_wifi_env_style，消除重复的 iw dev 解析逻辑
+	local ifaces = arx_list_ap_ifaces_wifi_env_style()
+	for _, row in ipairs(ifaces) do
+		table.insert(res.interfaces, {
+			ifname    = row.ifname,
+			ssid      = row.ssid or "",
+			channel   = row.channel,
+			bandwidth = row.bandwidth or "",
+			mode      = row.mode or "AP",
+		})
+	end
+	http.write_json(res)
 end
 
 function action_wifi_rssi_data()

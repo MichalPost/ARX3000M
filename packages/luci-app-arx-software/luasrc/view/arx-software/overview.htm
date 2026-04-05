@@ -1,31 +1,31 @@
 <%+header%>
-<div class="page-header">
+<div class="page-header page-hd ani animate-in">
 	<div class="page-title-row">
 		<h1><svg class="arx-icon" style="width:26px;height:26px;color:var(--primary-light);" aria-hidden="true"><use href="#i-package"/></svg> ARX 软件源</h1>
-		<span class="page-subtitle">切换 opkg 镜像、更新索引并进入软件包管理</span>
+		<span class="page-subtitle page-sub">切换 opkg 镜像、更新索引并进入软件包管理</span>
 	</div>
 </div>
 
-<div class="cbi-section" style="margin-bottom:1rem;">
-	<p style="margin:0 0 0.5rem 0;opacity:0.9;">
+<div class="cbi-section animate-in" style="margin-bottom:1rem;">
+	<div class="arx-callout arx-callout--info" style="margin:0">
 		<strong>提示：</strong>安装插件前请确认 overlay 剩余空间充足；内核模块（kmod）必须与当前内核版本一致，否则无法安装。
 		第三方镜像可能比官方同步略慢，属正常现象。
-	</p>
-	<p style="margin:0;opacity:0.85;">
+	</div>
+	<p class="arx-prose" style="margin-top:12px;margin-bottom:0">
 		若 <code>opkg update</code> 失败，请查看下方日志末尾；也可在 SSH 执行 <code>logread | tail</code> 辅助排查。
 	</p>
 </div>
 
-<div class="cbi-section" id="arx-extroot-section">
+<div class="cbi-section animate-in" id="arx-extroot-section">
 	<h3>一键 extroot（整盘 overlay 到 U 盘）</h3>
 	<p style="margin:0 0 12px 0;opacity:0.92;">
 		<strong>作用：</strong>把当前可写层 <code>/overlay</code> 迁移到<strong>已连接的 USB 磁盘分区</strong>，重启后<strong>所有软件包与配置</strong>默认写入 U 盘，相当于官方文档中的 extroot。
 		与上方「仅 opkg 备用目标」不同，这是<strong>系统级</strong>迁移。
 	</p>
-	<p style="margin:0 0 12px 0;font-size:12px;opacity:0.88;color:var(--danger, #f87171);">
+	<div class="arx-callout arx-callout--danger" style="margin:0 0 12px 0;font-size:12px">
 		<strong>风险：</strong>操作错误可能导致无法启动。请先备份配置；仅选择<strong>U 盘分区</strong>（本向导仅允许 <code>/dev/sd*</code> 分区，避免误选内置 eMMC）。
 		勾选「格式化」将<strong>清空该分区全部数据</strong>。
-	</p>
+	</div>
 	<div id="arx-extroot-precheck" class="cbi-value-field" style="font-size:13px;margin-bottom:10px;">加载中…</div>
 	<p style="margin:0 0 8px 0;font-size:12px;opacity:0.85;">当前 <code>/overlay</code> 块设备：<code id="arx-extroot-odev">—</code> · 已有 fstab 指向 /overlay：<strong id="arx-extroot-fstab">—</strong></p>
 	<div class="cbi-value-field">
@@ -50,10 +50,36 @@
 		<a class="cbi-button cbi-button-neutral" href="<%=url('admin/reboot')%>">前往重启</a>
 	</div>
 	<div id="arx-extroot-msg" style="margin-top:12px;font-size:13px;"></div>
-	<pre id="arx-extroot-log-out" style="display:none;margin-top:10px;overflow:auto;max-height:18em;background:var(--card-bg, #1a1a24);padding:12px;border-radius:8px;font-size:11px;"></pre>
+	<pre id="arx-extroot-log-out" style="display:none;margin-top:10px;overflow:auto;max-height:18em;background:var(--bg-input);padding:12px;border-radius:8px;font-size:11px;"></pre>
+	<h4 style="margin:18px 0 8px 0;">多分区 U 盘：swap 与数据盘（本向导不自动处理）</h4>
+	<p style="margin:0 0 8px 0;font-size:12px;opacity:0.88;">
+		建议在 PC（如 Ubuntu 磁盘工具）将 U 盘设为 <strong>GPT</strong>，例如：<code>sda1</code> 专用于 overlay（上方一键 extroot）、<code>sda2</code> 作 swap、<code>sda3</code> 作日常数据。分区请在插入路由器<strong>之前</strong>完成；仅第一分区由本向导格式化为 ext4（若勾选格式化）。
+	</p>
+	<p style="margin:0 0 8px 0;font-size:12px;opacity:0.88;">
+		<strong>重启生效后</strong>，到 <strong>系统 → 挂载点</strong> 继续添加：<code>sda2</code> 设为交换分区；<code>sda3</code> 挂载到如 <code>/mnt/data</code>（ext4 需先 <code>mkfs.ext4</code>，可在 SSH 或 PC 上完成）。
+	</p>
+	<pre style="margin:0 0 8px 0;overflow:auto;max-height:14em;background:var(--bg-input);padding:10px;border-radius:8px;font-size:11px;line-height:1.45;"># SSH 参考：swap（替换为 blkid 查到的 UUID）
+opkg install block-mount kmod-fs-ext4
+mkswap /dev/sda2
+uci set fstab.swap=swap
+uci set fstab.swap.uuid='YOUR-SDA2-UUID'
+uci set fstab.swap.enabled='1'
+uci commit fstab
+/etc/init.d/fstab enable
+/etc/init.d/fstab restart
+
+# 数据分区挂载到 /mnt/data
+mkdir -p /mnt/data
+uci set fstab.data=mount
+uci set fstab.data.target='/mnt/data'
+uci set fstab.data.uuid='YOUR-SDA3-UUID'
+uci set fstab.data.fstype='ext4'
+uci set fstab.data.enabled='1'
+uci commit fstab
+/etc/init.d/fstab restart</pre>
 </div>
 
-<div class="cbi-section">
+<div class="cbi-section animate-in">
 	<h3>安装到 U 盘（opkg 备用目标）</h3>
 	<p style="margin:0 0 10px 0;opacity:0.9;">
 		<strong>说明：</strong>系统自带的「软件包」页面默认把包装进根文件系统（overlay）。
@@ -91,20 +117,20 @@
 		</label>
 		<button type="button" class="cbi-button cbi-button-save" id="arx-btn-pkg-install">安装</button>
 	</div>
-	<pre id="arx-usb-log" style="display:none;margin-top:10px;overflow:auto;max-height:12em;background:var(--card-bg, #1a1a24);padding:12px;border-radius:8px;font-size:11px;"></pre>
+	<pre id="arx-usb-log" style="display:none;margin-top:10px;overflow:auto;max-height:12em;background:var(--bg-input);padding:12px;border-radius:8px;font-size:11px;"></pre>
 </div>
 
-<div class="cbi-section">
+<div class="cbi-section animate-in">
 	<h3>当前系统</h3>
 	<div id="arx-rel" class="cbi-value-field" style="font-family:monospace;font-size:12px;">加载中…</div>
 </div>
 
-<div class="cbi-section">
+<div class="cbi-section animate-in">
 	<h3>distfeeds.conf 预览（前 10 行）</h3>
-	<pre id="arx-preview" style="overflow:auto;max-height:14em;background:var(--card-bg, #1a1a24);padding:12px;border-radius:8px;font-size:11px;">—</pre>
+	<pre id="arx-preview" style="overflow:auto;max-height:14em;background:var(--bg-input);padding:12px;border-radius:8px;font-size:11px;">—</pre>
 </div>
 
-<div class="cbi-section">
+<div class="cbi-section animate-in">
 	<h3>镜像预设</h3>
 	<div class="cbi-value-field">
 		<label for="arx-mirror" style="display:block;margin-bottom:6px;">选择源</label>
@@ -131,7 +157,7 @@
 	</div>
 	<div id="arx-probe-out" style="margin-top:10px;font-size:12px;color:var(--text-secondary);"></div>
 	<div id="arx-msg" style="margin-top:12px;font-size:13px;"></div>
-	<pre id="arx-log" style="display:none;margin-top:10px;overflow:auto;max-height:16em;background:var(--card-bg, #1a1a24);padding:12px;border-radius:8px;font-size:11px;"></pre>
+	<pre id="arx-log" style="display:none;margin-top:10px;overflow:auto;max-height:16em;background:var(--bg-input);padding:12px;border-radius:8px;font-size:11px;"></pre>
 </div>
 
 <script type="text/javascript">

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>高级网络工具 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.pf-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:7px}
+.pf-proto{font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px}
+.pf-tcp{background:rgba(var(--primary-rgb),.15);color:var(--primary)}
+.pf-udp{background:rgba(var(--accent-rgb),.15);color:var(--accent)}
+.pf-name{font-weight:600;font-size:13px;flex:1;min-width:80px}
+.pf-rule{font-size:12px;color:var(--text2);font-family:monospace}
+.fw-rule-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:7px;font-size:13px}
+.chain-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px}
+.chain-input{background:rgba(34,197,94,.15);color:var(--success)}
+.chain-forward{background:rgba(var(--primary-rgb),.15);color:var(--primary)}
+.action-accept{color:var(--success);font-weight:600}
+.action-drop{color:var(--danger);font-weight:600}
+.action-reject{color:var(--warning);font-weight:600}
+.diag-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:640px){.diag-grid{grid-template-columns:1fr}}
+.diag-card{background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);padding:14px}
+.diag-title{font-size:13px;font-weight:600;margin-bottom:9px}
+.diag-row{display:flex;gap:7px}
+.diag-out{margin-top:9px;padding:9px 11px;background:var(--bg-base);border-radius:var(--r-sm);font-size:12px;font-family:monospace;color:var(--text2);min-height:58px;white-space:pre-wrap;line-height:1.6}
+.stat-grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:14px}
+@media(max-width:640px){.stat-grid-3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">管理 / <span>高级网络工具</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>🌐 高级网络工具</h1>
+      <div class="page-sub">端口转发、防火墙规则、VPN/DDNS 状态、网络诊断</div>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="stat-grid-3 ani">
+      <div class="stat-card" style="--ca:var(--accent)">
+        <div class="stat-lbl">DDNS 服务</div>
+        <div><span class="stat-val">2/2</span></div>
+        <div class="stat-sub">2 个服务运行中</div>
+      </div>
+      <div class="stat-card" style="--ca:var(--primary)">
+        <div class="stat-lbl">UPnP / NAT-PMP</div>
+        <div class="stat-val" style="font-size:18px;color:var(--success)">运行中</div>
+        <div class="stat-sub">8 个活跃转发</div>
+      </div>
+      <div class="stat-card" style="--ca:var(--success)">
+        <div class="stat-lbl">防火墙规则</div>
+        <div><span class="stat-val">54</span><span class="stat-unit">条</span></div>
+        <div class="stat-sub">INPUT 24 · FWD 18 · NAT 12</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="card ani" style="padding:0;overflow:hidden">
+      <div style="padding:14px 16px 0">
+        <div class="tabs">
+          <button class="tab active" onclick="switchTab('portfw',this)">端口转发</button>
+          <button class="tab" onclick="switchTab('firewall',this)">防火墙规则</button>
+          <button class="tab" onclick="switchTab('diag',this)">网络诊断</button>
+          <button class="tab" onclick="switchTab('ddns',this)">DDNS 状态</button>
+        </div>
+      </div>
+
+      <!-- Tab1: Port Forward -->
+      <div class="tab-panel active" id="tab-portfw" style="padding:14px 16px 18px">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+          <button class="btn btn-p" onclick="ARX.toast('请在 OpenWrt 原生界面添加规则','warning')">➕ 添加规则</button>
+        </div>
+        <div class="pf-row">
+          <span class="pf-proto pf-tcp">TCP</span>
+          <span class="pf-name">SSH 远程访问</span>
+          <span class="pf-rule">WAN:22 → 192.168.1.100:22</span>
+          <span class="badge b-s">已启用</span>
+          <button class="btn btn-g btn-sm" style="margin-left:auto" onclick="ARX.toast('已切换','success')">禁用</button>
+        </div>
+        <div class="pf-row">
+          <span class="pf-proto pf-tcp">TCP</span>
+          <span class="pf-name">Web 服务器</span>
+          <span class="pf-rule">WAN:80 → 192.168.1.200:80</span>
+          <span class="badge b-s">已启用</span>
+          <button class="btn btn-g btn-sm" style="margin-left:auto" onclick="ARX.toast('已切换','success')">禁用</button>
+        </div>
+        <div class="pf-row">
+          <span class="pf-proto pf-udp">UDP</span>
+          <span class="pf-name">游戏服务器</span>
+          <span class="pf-rule">WAN:27015 → 192.168.1.105:27015</span>
+          <span class="badge b-w">已禁用</span>
+          <button class="btn btn-g btn-sm" style="margin-left:auto" onclick="ARX.toast('已切换','success')">启用</button>
+        </div>
+        <div class="pf-row">
+          <span class="pf-proto pf-tcp">TCP</span>
+          <span class="pf-name">NAS Samba</span>
+          <span class="pf-rule">WAN:445 → 192.168.1.150:445</span>
+          <span class="badge b-s">已启用</span>
+          <button class="btn btn-g btn-sm" style="margin-left:auto" onclick="ARX.toast('已切换','success')">禁用</button>
+        </div>
+      </div>
+
+      <!-- Tab2: Firewall -->
+      <div class="tab-panel" id="tab-firewall" style="padding:14px 16px 18px">
+        <div class="fw-rule-row">
+          <span class="chain-badge chain-input">INPUT</span>
+          <span style="flex:1;font-weight:500">允许 SSH</span>
+          <span style="font-family:monospace;font-size:12px;color:var(--text2)">tcp dpt:22</span>
+          <span class="action-accept">ACCEPT</span>
+        </div>
+        <div class="fw-rule-row">
+          <span class="chain-badge chain-input">INPUT</span>
+          <span style="flex:1;font-weight:500">允许 HTTPS</span>
+          <span style="font-family:monospace;font-size:12px;color:var(--text2)">tcp dpt:443</span>
+          <span class="action-accept">ACCEPT</span>
+        </div>
+        <div class="fw-rule-row">
+          <span class="chain-badge chain-forward">FORWARD</span>
+          <span style="flex:1;font-weight:500">LAN → WAN</span>
+          <span style="font-family:monospace;font-size:12px;color:var(--text2)">src 192.168.1.0/24</span>
+          <span class="action-accept">ACCEPT</span>
+        </div>
+        <div class="fw-rule-row">
+          <span class="chain-badge chain-forward">FORWARD</span>
+          <span style="flex:1;font-weight:500">屏蔽设备</span>
+          <span style="font-family:monospace;font-size:12px;color:var(--text2)">src 192.168.1.150</span>
+          <span class="action-drop">DROP</span>
+        </div>
+        <div class="fw-rule-row">
+          <span class="chain-badge chain-input">INPUT</span>
+          <span style="flex:1;font-weight:500">拒绝 Telnet</span>
+          <span style="font-family:monospace;font-size:12px;color:var(--text2)">tcp dpt:23</span>
+          <span class="action-reject">REJECT</span>
+        </div>
+      </div>
+
+      <!-- Tab3: Diagnostics -->
+      <div class="tab-panel" id="tab-diag" style="padding:14px 16px 18px">
+        <div class="diag-grid">
+          <div class="diag-card">
+            <div class="diag-title">🏓 Ping 测试</div>
+            <div class="diag-row">
+              <input class="form-inp" style="flex:1" id="ping-host" value="8.8.8.8">
+              <button class="btn btn-p btn-sm" onclick="runPing()">执行</button>
+            </div>
+            <div class="diag-out" id="ping-out">点击执行开始测试...</div>
+          </div>
+          <div class="diag-card">
+            <div class="diag-title">🔍 DNS 查询</div>
+            <div class="diag-row">
+              <input class="form-inp" style="flex:1" id="dns-host" value="google.com">
+              <button class="btn btn-p btn-sm" onclick="runDns()">查询</button>
+            </div>
+            <div class="diag-out" id="dns-out">点击查询开始...</div>
+          </div>
+          <div class="diag-card">
+            <div class="diag-title">🛤️ 路由追踪</div>
+            <div class="diag-row">
+              <input class="form-inp" style="flex:1" id="trace-host" value="1.1.1.1">
+              <button class="btn btn-p btn-sm" onclick="runTrace()">追踪</button>
+            </div>
+            <div class="diag-out" id="trace-out">点击追踪开始...</div>
+          </div>
+          <div class="diag-card">
+            <div class="diag-title">🌐 连通性检测</div>
+            <button class="btn btn-p" style="width:100%" onclick="runConn()">检测所有接口</button>
+            <div class="diag-out" id="conn-out">点击检测...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab4: DDNS -->
+      <div class="tab-panel" id="tab-ddns" style="padding:14px 16px 18px">
+        <div class="pf-row">
+          <span class="badge b-s">运行中</span>
+          <span class="pf-name">Cloudflare DDNS</span>
+          <span class="pf-rule">home.example.com → 114.xxx.xxx.12</span>
+          <span style="font-size:11px;color:var(--text3);margin-left:auto">更新于 14:28</span>
+        </div>
+        <div class="pf-row">
+          <span class="badge b-s">运行中</span>
+          <span class="pf-name">DDNS.net</span>
+          <span class="pf-rule">myrouter.ddns.net → 114.xxx.xxx.12</span>
+          <span style="font-size:11px;color:var(--text3);margin-left:auto">更新于 14:15</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+function switchTab(id, btn) {
+  document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
+  document.querySelectorAll('.tab').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('tab-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+function runPing() {
+  var h = document.getElementById('ping-host').value || '8.8.8.8';
+  var o = document.getElementById('ping-out');
+  o.textContent = '正在 ping ' + h + '...';
+  setTimeout(function() {
+    o.textContent = 'PING ' + h + ': 56 data bytes\n64 bytes from ' + h + ': icmp_seq=1 ttl=118 time=12.4 ms\n64 bytes from ' + h + ': icmp_seq=2 ttl=118 time=11.8 ms\n64 bytes from ' + h + ': icmp_seq=3 ttl=118 time=13.1 ms\n--- ' + h + ' ping statistics ---\n3 packets transmitted, 3 received, 0% packet loss\nrtt min/avg/max = 11.8/12.4/13.1 ms';
+  }, 800);
+}
+function runDns() {
+  var h = document.getElementById('dns-host').value || 'google.com';
+  var o = document.getElementById('dns-out');
+  o.textContent = '查询 ' + h + '...';
+  setTimeout(function() {
+    o.textContent = 'Server: 127.0.0.1#53\nAddress: 127.0.0.1#53\n\nNon-authoritative answer:\nName: ' + h + '\nAddress: 142.250.185.46\nAddress: 2404:6800:4004:80e::200e';
+  }, 800);
+}
+function runTrace() {
+  var h = document.getElementById('trace-host').value || '1.1.1.1';
+  var o = document.getElementById('trace-out');
+  o.textContent = '追踪到 ' + h + '...';
+  setTimeout(function() {
+    o.textContent = 'traceroute to ' + h + ', 30 hops max\n 1  192.168.1.1  0.4 ms\n 2  10.0.0.1     3.2 ms\n 3  202.97.x.x   8.1 ms\n 4  ' + h + '      12.6 ms';
+  }, 800);
+}
+function runConn() {
+  var o = document.getElementById('conn-out');
+  o.textContent = '检测中...';
+  setTimeout(function() {
+    o.textContent = '✅ WAN (eth0)      → 114.xxx.xxx.12  可达\n✅ LAN (br-lan)    → 192.168.1.1     正常\n✅ DNS (127.0.0.1) → SmartDNS        响应正常\n✅ IPv6 (WAN6)     → 2409:8a28::/32  可达';
+  }, 800);
+}
+</script>
+</body>
+</html>

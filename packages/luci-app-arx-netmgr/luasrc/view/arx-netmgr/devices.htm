@@ -1,10 +1,14 @@
 <%+header%>
-<h1>📡 设备管理</h1>
-<p style="margin-bottom:24px;color:var(--text-muted);">管理已连接到 ARX3000M 的所有设备</p>
+<div class="page-header page-hd ani animate-in">
+    <div class="page-title-row">
+        <h1><svg class="arx-icon" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-users"/></svg> 设备管理</h1>
+        <span class="page-subtitle page-sub">管理已连接到 ARX3000M 的所有设备</span>
+    </div>
+</div>
 
 <div class="cbi-section animate-in" style="margin-bottom:16px;">
-    <p style="margin:0 0 8px 0;font-size:13px;color:var(--text-secondary);">限速 / QoS（若固件已安装对应插件）：</p>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;">
+    <p class="arx-prose" style="margin-bottom:8px">限速 / QoS（若固件已安装对应插件）：</p>
+    <div class="arx-action-row arx-action-row--flush">
         <a href="<%=url('admin/network/sqm')%>" class="cbi-button cbi-button-link">SQM 队列</a>
         <a href="<%=url('admin/network/eqos')%>" class="cbi-button cbi-button-link">EQoS</a>
     </div>
@@ -18,29 +22,29 @@
             <span id="blocked-count" class="badge badge-danger">-- 已屏蔽</span>
         </div>
         <div style="display:flex;gap:8px;">
-            <input type="text" id="device-search" placeholder="搜索设备名 / IP / MAC..." 
-                   style="padding:8px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);width:240px;font-size:13px;">
-            <select id="device-filter" style="padding:8px 14px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:var(--bg-input);color:var(--text-primary);font-size:13px;">
+            <input type="text" id="device-search" class="arx-input-inline" placeholder="搜索设备名 / IP / MAC..." 
+                   style="width:240px;max-width:100%;">
+            <select id="device-filter" class="arx-select-inline">
                 <option value="all">全部</option>
                 <option value="wifi">仅 WiFi</option>
                 <option value="ethernet">仅有线</option>
                 <option value="blocked">已屏蔽</option>
             </select>
-            <button onclick="refreshDevices()" class="cbi-button cbi-button-apply" style="padding:8px 14px;">🔄 刷新</button>
+            <button onclick="refreshDevices()" class="cbi-button cbi-button-apply" style="padding:8px 14px;">刷新</button>
         </div>
     </div>
 
     <div id="device-list">
         <div class="device-list-skeleton" style="padding:8px 0;">
-            <div class="device-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:70%;"></div></div></div>
-            <div class="device-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:55%;"></div></div></div>
-            <div class="device-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:62%;"></div></div></div>
+            <div class="device-item dev-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:70%;"></div></div></div>
+            <div class="device-item dev-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:55%;"></div></div></div>
+            <div class="device-item dev-item"><div class="device-avatar-wrap"><div class="arx-skeleton" style="width:40px;height:40px;border-radius:var(--radius-sm);"></div></div><div style="flex:1;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--text" style="width:62%;"></div></div></div>
         </div>
     </div>
 </div>
 
 <div class="cbi-section animate-in" id="device-detail-panel" style="display:none;">
-    <h2 id="detail-title">📋 设备详情</h2>
+    <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-users"/></svg><span id="detail-title">设备详情</span></h2>
     <div id="detail-content"></div>
 </div>
 
@@ -85,7 +89,7 @@
             }
 
             var item = document.createElement('div');
-            item.className = 'device-item animate-in';
+            item.className = 'device-item dev-item animate-in';
             item.style.animationDelay = (i * 0.03) + 's';
 
             // 头像区
@@ -258,7 +262,7 @@
 
         content.innerHTML = '<div style="padding:16px;"><div class="arx-skeleton arx-skeleton--title"></div><div class="arx-skeleton arx-skeleton--row"></div><div class="arx-skeleton arx-skeleton--row" style="width:80%;"></div><div class="arx-skeleton arx-skeleton--row" style="width:60%;"></div></div>';
         panel.style.display = 'block';
-        document.getElementById('detail-title').textContent = '📋 设备详情 - ' + mac;
+        document.getElementById('detail-title').textContent = '设备详情 - ' + mac;
 
         var xhr = new XMLHttpRequest();
         xhr.open('POST', '<%=url("admin/arx-netmgr/device_detail")%>', true);

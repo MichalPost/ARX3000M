@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设备管理 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.toolbar-l{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.toolbar-r{display:flex;align-items:center;gap:7px}
+.search-inp{padding:7px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text1);font-size:13px;width:210px;outline:none;transition:.15s}
+.search-inp:focus{border-color:rgba(var(--primary-rgb),.5)}
+.filter-sel{padding:7px 10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text1);font-size:13px;outline:none;cursor:pointer}
+.dev-row{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;transition:.15s;flex-wrap:wrap}
+.dev-row:hover{border-color:rgba(var(--primary-rgb),.3)}
+.dev-row.blocked{border-left:3px solid var(--danger);opacity:.85}
+.dev-av{width:36px;height:36px;border-radius:var(--r-sm);background:linear-gradient(135deg,rgba(var(--primary-rgb),.3),rgba(var(--accent-rgb),.2));display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:var(--primary);flex-shrink:0;position:relative}
+.dev-led{position:absolute;bottom:-2px;right:-2px;width:8px;height:8px;border-radius:50%;border:2px solid var(--bg-card)}
+.led-on{background:var(--success)}.led-off{background:var(--text3)}.led-bl{background:var(--danger)}
+.dev-info{flex:1;min-width:160px}
+.dev-name{font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dev-meta{font-size:11px;color:var(--text3);margin-top:2px}
+.sig-bars{display:flex;align-items:flex-end;gap:2px;height:16px}
+.sig-bars span{width:4px;border-radius:2px}
+.dev-iface{font-size:11px;color:var(--text3);min-width:80px}
+.dev-acts{display:flex;gap:5px;margin-left:auto}
+.detail-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;margin-top:14px;display:none}
+.detail-panel.open{display:block}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
+.detail-cell{background:var(--bg-input);border-radius:var(--r-sm);padding:9px 12px}
+.detail-lbl{font-size:10px;color:var(--text3);text-transform:uppercase}
+.detail-val{font-size:13px;font-weight:600;margin-top:3px}
+</style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">管理 / <span>设备管理</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>📱 设备管理</h1>
+      <div class="page-sub">管理已连接到 ARX3000M 的所有设备</div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar ani">
+      <div class="toolbar-l">
+        <span class="badge b-p">12 台</span>
+        <span class="badge b-s">10 在线</span>
+        <span class="badge b-d">1 已屏蔽</span>
+      </div>
+      <div class="toolbar-r">
+        <input class="search-inp" type="text" id="search" placeholder="搜索名称 / IP / MAC…" oninput="renderDevices()">
+        <select class="filter-sel" id="filter" onchange="renderDevices()">
+          <option value="all">全部</option>
+          <option value="wifi">仅 WiFi</option>
+          <option value="ethernet">仅有线</option>
+          <option value="blocked">已屏蔽</option>
+        </select>
+        <button class="btn btn-p btn-sm" onclick="ARX.toast('设备列表已更新','success')">🔄 刷新</button>
+      </div>
+    </div>
+
+    <!-- Device List -->
+    <div id="device-list" class="ani"></div>
+
+    <!-- Detail Panel -->
+    <div class="detail-panel" id="detail-panel">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <h2 style="font-size:15px" id="detail-title">📋 设备详情</h2>
+        <button class="btn btn-g btn-sm" onclick="closeDetail()">✕ 关闭</button>
+      </div>
+      <div id="detail-content"></div>
+    </div>
+  </div>
+</div>
+
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+var devices = [
+  {name:'iPhone 15 Pro', ip:'192.168.1.100', mac:'A4:C3:F0:12:34:56', type:'wifi',     online:true,  blocked:false, signal:-48, vendor:'Apple',     iface:'wlan1(5G)',    alias:'我的手机'},
+  {name:'MacBook Pro',   ip:'192.168.1.101', mac:'3C:22:FB:AB:CD:EF', type:'wifi',     online:true,  blocked:false, signal:-55, vendor:'Apple',     iface:'wlan1(5G)',    alias:''},
+  {name:'小米电视',       ip:'192.168.1.102', mac:'64:09:80:11:22:33', type:'ethernet', online:true,  blocked:false, signal:null,vendor:'Xiaomi',    iface:'eth1',         alias:'客厅电视'},
+  {name:'iPad Air',      ip:'192.168.1.103', mac:'B8:F6:B1:44:55:66', type:'wifi',     online:true,  blocked:false, signal:-62, vendor:'Apple',     iface:'wlan0(2.4G)', alias:''},
+  {name:'Windows PC',    ip:'192.168.1.104', mac:'DC:A6:32:77:88:99', type:'ethernet', online:true,  blocked:false, signal:null,vendor:'Intel',     iface:'eth1',         alias:'台式机'},
+  {name:'ESP32-CAM',     ip:'192.168.1.110', mac:'24:6F:28:AA:BB:CC', type:'wifi',     online:true,  blocked:false, signal:-71, vendor:'Espressif', iface:'wlan0(2.4G)', alias:'门口摄像头'},
+  {name:'Xiaomi Router', ip:'192.168.1.200', mac:'78:11:DC:DD:EE:FF', type:'ethernet', online:false, blocked:false, signal:null,vendor:'Xiaomi',    iface:'eth1',         alias:''},
+  {name:'Unknown',       ip:'192.168.1.150', mac:'00:11:22:33:44:55', type:'wifi',     online:true,  blocked:true,  signal:-80, vendor:'Unknown',   iface:'wlan0(2.4G)', alias:''},
+];
+
+function sigBars(dbm) {
+  if (!dbm) return '';
+  var lvl = dbm > -50 ? 4 : dbm > -65 ? 3 : dbm > -75 ? 2 : 1;
+  var color = dbm > -55 ? '#22c55e' : dbm > -67 ? '#eab308' : '#ef4444';
+  var h = '<div class="sig-bars">';
+  for (var i = 1; i <= 4; i++) {
+    h += '<span style="height:'+(i*4)+'px;background:'+color+';opacity:'+(i<=lvl?1:0.2)+'"></span>';
+  }
+  return h + '</div>';
+}
+
+function renderDevices() {
+  var q = document.getElementById('search').value.toLowerCase();
+  var f = document.getElementById('filter').value;
+  var list = document.getElementById('device-list');
+  var filtered = devices.filter(function(d) {
+    if (q && !(d.name.toLowerCase().includes(q) || d.ip.includes(q) || d.mac.toLowerCase().includes(q) || (d.alias||'').toLowerCase().includes(q))) return false;
+    if (f === 'wifi' && d.type !== 'wifi') return false;
+    if (f === 'ethernet' && d.type !== 'ethernet') return false;
+    if (f === 'blocked' && !d.blocked) return false;
+    return true;
+  });
+  if (!filtered.length) {
+    list.innerHTML = '<div class="empty">没有匹配的设备</div>';
+    return;
+  }
+  list.innerHTML = filtered.map(function(d, i) {
+    var ledCls = d.blocked ? 'led-bl' : d.online ? 'led-on' : 'led-off';
+    var badge = d.blocked
+      ? '<span class="badge b-d">已屏蔽</span>'
+      : d.online
+        ? '<span class="badge b-s">'+(d.type==='wifi'?'📶':'🔌')+' 在线</span>'
+        : '<span class="badge b-m">'+(d.type==='wifi'?'📶':'🔌')+' 离线</span>';
+    var dispName = d.alias ? d.alias+' · '+d.name : d.name;
+    return '<div class="dev-row'+(d.blocked?' blocked':'')+'" style="animation-delay:'+(i*.04)+'s">'
+      +'<div class="dev-av">'+((d.alias||d.name).charAt(0).toUpperCase())
+      +'<span class="dev-led '+ledCls+'"></span></div>'
+      +'<div class="dev-info">'
+      +'<div class="dev-name">'+dispName+' '+badge+'</div>'
+      +'<div class="dev-meta">'+d.ip+' · '+d.mac.toUpperCase()+' · '+d.vendor+'</div>'
+      +'</div>'
+      +(d.signal ? '<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text3)">'+sigBars(d.signal)+d.signal+' dBm</div>' : '')
+      +'<div class="dev-iface">'+d.iface+'</div>'
+      +'<div class="dev-acts">'
+      +(d.blocked
+        ? '<button class="btn btn-s btn-sm" onclick="unblock(\''+d.mac+'\')">解除</button>'
+        : '<button class="btn btn-d btn-sm" onclick="block(\''+d.mac+'\')">屏蔽</button>')
+      +'<button class="btn btn-g btn-sm" onclick="showDetail(\''+d.mac+'\')">详情</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+function block(mac) {
+  if (!confirm('确定屏蔽 '+mac+' ？')) return;
+  devices.forEach(function(d){ if(d.mac===mac) d.blocked=true; });
+  renderDevices(); ARX.toast('已屏蔽 '+mac,'danger');
+}
+function unblock(mac) {
+  devices.forEach(function(d){ if(d.mac===mac) d.blocked=false; });
+  renderDevices(); ARX.toast('已解除屏蔽','success');
+}
+function showDetail(mac) {
+  var d = devices.find(function(x){ return x.mac===mac; });
+  if (!d) return;
+  document.getElementById('detail-title').textContent = '📋 设备详情 — '+(d.alias||d.name);
+  document.getElementById('detail-content').innerHTML =
+    '<div class="detail-grid">'
+    +'<div class="detail-cell"><div class="detail-lbl">MAC 地址</div><div class="detail-val" style="font-family:monospace">'+d.mac.toUpperCase()+'</div></div>'
+    +'<div class="detail-cell"><div class="detail-lbl">IP 地址</div><div class="detail-val" style="font-family:monospace">'+d.ip+'</div></div>'
+    +'<div class="detail-cell"><div class="detail-lbl">厂商</div><div class="detail-val">'+d.vendor+'</div></div>'
+    +'<div class="detail-cell"><div class="detail-lbl">接口</div><div class="detail-val">'+d.iface+'</div></div>'
+    +'<div class="detail-cell"><div class="detail-lbl">连接类型</div><div class="detail-val">'+(d.type==='wifi'?'📶 WiFi':'🔌 有线')+'</div></div>'
+    +'<div class="detail-cell"><div class="detail-lbl">活跃连接</div><div class="detail-val">24 个</div></div>'
+    +'</div>'
+    +'<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">'
+    +'<div style="font-size:13px;font-weight:600;margin-bottom:9px">备注与分组</div>'
+    +'<input class="form-inp" style="width:200px;margin-right:7px" placeholder="别名，如：客厅电视" value="'+(d.alias||'')+'" id="alias-inp">'
+    +'<select class="form-sel" style="margin-right:7px" id="group-sel"><option>未分类</option><option>家人</option><option>IoT</option></select>'
+    +'<button class="btn btn-p btn-sm" onclick="saveAlias(\''+mac+'\')">保存</button>'
+    +'</div>';
+  var panel = document.getElementById('detail-panel');
+  panel.classList.add('open');
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function saveAlias(mac) {
+  var alias = document.getElementById('alias-inp').value;
+  devices.forEach(function(d){ if(d.mac===mac) d.alias=alias; });
+  renderDevices(); ARX.toast('已保存','success');
+}
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+}
+
+renderDevices();
+</script>
+</body>
+</html>

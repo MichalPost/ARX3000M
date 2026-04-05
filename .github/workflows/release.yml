@@ -1,0 +1,148 @@
+name: Release ARX3000M Firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Build workflow 的 Run ID（留空则使用最新一次成功的）'
+        required: false
+        default: ''
+      tag_suffix:
+        description: '版本后缀（可选，如 hotfix）'
+        required: false
+        default: ''
+
+jobs:
+  release:
+    name: 🚀 发布 Release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v6.0.2
+
+      - name: 确定 Run ID
+        id: resolve_run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID="${{ inputs.run_id }}"
+          if [ -z "$RUN_ID" ]; then
+            echo "未指定 Run ID，查找最新一次成功的 build run..."
+            RUN_ID=$(gh run list \
+              --workflow build.yml \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId')
+            if [ -z "$RUN_ID" ]; then
+              echo "❌ 找不到任何成功的 build run"
+              exit 1
+            fi
+            echo "✅ 使用最新成功 Run ID: $RUN_ID"
+          else
+            echo "✅ 使用指定 Run ID: $RUN_ID"
+          fi
+          echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+
+      - name: 下载固件 Artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p firmware firmware-raw
+          gh run download ${{ steps.resolve_run.outputs.run_id }} \
+            --pattern "arx3000m-firmware-*" \
+            --dir firmware-raw
+          # 展平目录：用相对路径生成唯一文件名，避免不同子目录同名文件互相覆盖
+          find firmware-raw -type f -print0 | while IFS= read -r -d '' f; do
+            rel="${f#firmware-raw/}"
+            rel="${rel//\//__}"
+            cp "$f" "firmware/$rel"
+          done
+          count=$(find firmware -type f 2>/dev/null | wc -l)
+          count=$(echo "$count" | tr -d ' ')
+          if [ -z "$count" ] || [ "$count" -eq 0 ]; then
+            echo "❌ 未找到任何固件文件，中止发布"
+            exit 1
+          fi
+          echo "📦 固件文件:"
+          ls -lh firmware/
+
+      - name: 生成版本标签
+        id: version
+        run: |
+          VERSION="v1.0.${{ steps.resolve_run.outputs.run_id }}"
+          DATE=$(date '+%Y%m%d')
+          SUFFIX="${{ inputs.tag_suffix }}"
+          if [ -n "$SUFFIX" ]; then
+            TAG="${VERSION}-${DATE}-${SUFFIX}"
+          else
+            TAG="${VERSION}-${DATE}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "ARX3000M Firmware ${{ steps.version.outputs.tag }}"
+          body: |
+            ## ARX3000M (RAX3000M) OpenWrt 固件
+
+            **版本**: ${{ steps.version.outputs.tag }}
+            **来源 Run**: [${{ steps.resolve_run.outputs.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ steps.resolve_run.outputs.run_id }})
+            **发布者**: ${{ github.actor }}
+
+            ---
+
+            ### 固件说明（OpenWrt `main` / `cmcc_rax3000m`）
+
+            | 文件（通配） | 用途 |
+            |------|------|
+            | `*cmcc_rax3000m*squashfs*sysupgrade*.itb` | **日常升级**：LuCI「备份/升级」或 SSH `sysupgrade` |
+            | `*cmcc_rax3000m*initramfs*recovery*.itb` | **救砖/串口**：U-Boot + TFTP 等（勿当普通 LuCI 包乱刷） |
+            | `*cmcc_rax3000m*nand-ddr3-*.bin`/`.fip` 或 `*nand-ddr4-*` | **裸写 Flash**：仅救砖/首次写入，**DDR3/DDR4 必须与硬件一致** |
+            | `*cmcc_rax3000m*emmc-*` | eMMC 算力版用；**NAND 版勿刷** |
+
+            ### 刷入方法（已运行 OpenWrt 时）
+
+            1. 进入 LuCI → 系统 → 备份/升级
+            2. 选择 **`*squashfs*sysupgrade*.itb`**（扩展名为 **`.itb`**）
+            3. 按需勾选「保留配置」
+            4. 上传并等待重启；刷前请核对 `sha256sums`
+
+            ### 功能模块
+
+            - ✅ ARX3000M 现代化主题 (深色/浅色)
+            - ✅ 系统监控仪表盘 (CPU/内存/温度/网络)
+            - ✅ 设备管理器 (屏蔽/解封/IP绑定)
+            - ✅ 高级网络工具 (端口转发/防火墙/诊断)
+            - ✅ WiFi 握手抓包工具
+
+            > ⚠️ 请确认你的设备型号为 RAX3000M (MT7981B)，刷错型号可能导致变砖！
+          files: firmware/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup:
+    name: 清理旧 Release
+    runs-on: ubuntu-22.04
+    needs: release
+    if: always() && needs.release.result == 'success'
+    permissions:
+      contents: write
+
+    steps:
+      - name: 清理旧的 Release (保留最新 5 个)
+        uses: dev-drprasad/delete-older-releases@v0.3.0
+        with:
+          keep_latest: 5
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

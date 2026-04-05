@@ -16,7 +16,7 @@ define Package/luci-app-arx-wificrack
   SUBMENU:=3. Applications
   TITLE:=ARX3000M WiFi Handshake Capture
   PKGARCH:=all
-  DEPENDS:=+luci-base +luci-compat +hcxdumptool +hcxtools +iw +tcpdump +aircrack-ng +airmon-ng
+  DEPENDS:=+luci-base +luci-compat +hcxdumptool +hcxtools +iw +tcpdump +aircrack-ng +airmon-ng +hostapd +dnsmasq +iptables
 endef
 
 define Package/luci-app-arx-wificrack/description
@@ -39,10 +39,14 @@ define Package/luci-app-arx-wificrack/install
 	$(INSTALL_CONF) ./luasrc/view/arx-wificrack/*.htm $(1)/usr/lib/lua/luci/view/arx-wificrack/
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./root/etc/config/arx-wificrack $(1)/etc/config/arx-wificrack
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./root/etc/init.d/arx-et $(1)/etc/init.d/arx-et
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_CONF) ./root/usr/share/rpcd/acl.d/*.json $(1)/usr/share/rpcd/acl.d/
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) ./root/usr/bin/arx-wificrack.sh $(1)/usr/bin/
+	$(INSTALL_BIN) ./root/usr/bin/arx-et.sh $(1)/usr/bin/
+	$(INSTALL_BIN) ./root/usr/bin/arx-et-submit.sh $(1)/usr/bin/
 endef
 
 $(eval $(call BuildPackage,luci-app-arx-wificrack))

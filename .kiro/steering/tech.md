@@ -73,7 +73,7 @@ make package/luci-app-arx-dashboard/compile V=s
 GitHub Actions (`.github/workflows/build.yml`):
 - Triggers on push to `main`/`master` (ignores `*.md`, docs)
 - Two jobs: `prepare` (cache keys) → `build` (compile firmware)
-- Optional `release` job: only runs on manual `workflow_dispatch` with `upload_release: true`
+- Optional `release` job: runs automatically on push to `main`/`master`, or on manual `workflow_dispatch` with `upload_release: true` (default)
 - Caches: `dl/` directory + `ccache` (keyed on config + Makefile hashes)
 - Build timeout: 120 minutes
 - Artifacts: firmware `.bin` files (14-day retention) + build log (7-day retention)

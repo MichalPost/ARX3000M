@@ -1,5 +1,6 @@
 #!/bin/sh
-# ARX3000M — migrate /overlay to USB ext4 (extroot). USB sd* partitions only.
+# ARX3000M — migrate overlay to USB ext4 (extroot). USB sd* partitions only.
+# Copy source: /overlay when non-empty; else /rom/overlay (ImmortalWrt-style layouts).
 # Usage: arx-extroot-wizard precheck | apply <device> <format:0|1>
 
 set -e
@@ -7,6 +8,26 @@ LOG=/tmp/arx-extroot.log
 
 log() {
 	echo "$@" | tee -a "$LOG"
+}
+
+# Prefer live /overlay; if empty (e.g. some ImmortalWrt layouts), fall back to /rom/overlay.
+overlay_copy_src() {
+	local n
+	if [ -d /overlay ]; then
+		n=$(find /overlay -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+		if [ "$n" -gt 0 ]; then
+			echo /overlay
+			return
+		fi
+	fi
+	if [ -d /rom/overlay ]; then
+		n=$(find /rom/overlay -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+		if [ "$n" -gt 0 ]; then
+			echo /rom/overlay
+			return
+		fi
+	fi
+	echo /overlay
 }
 
 case "$1" in
@@ -42,7 +63,7 @@ case "$1" in
 		else
 			T=$(blkid -s TYPE -o value "$DEV" 2>/dev/null || true)
 			case "$T" in
-				ext4|ext3) ;;
+				ext4|ext3|ext2) ;;
 				*) log "未勾选格式化时，分区须已为 ext2/3/4，当前类型: ${T:-未知}"; exit 1 ;;
 			esac
 		fi
@@ -62,8 +83,14 @@ case "$1" in
 			fi
 		fi
 
-		log "复制 /overlay 到 $MNT …"
-		if ! ( (cd /overlay && tar cf - .) | (cd "$MNT" && tar xf -) ) >>"$LOG" 2>&1; then
+		OVERLAY_SRC=$(overlay_copy_src)
+		if [ "$OVERLAY_SRC" != /overlay ]; then
+			log "数据源: $OVERLAY_SRC（/overlay 顶层为空，使用兜底路径）"
+		else
+			log "数据源: /overlay"
+		fi
+		log "复制 $OVERLAY_SRC 到 $MNT …"
+		if ! ( (cd "$OVERLAY_SRC" && tar cf - .) | (cd "$MNT" && tar xf -) ) >>"$LOG" 2>&1; then
 			log "复制失败 (tar)"
 			umount "$MNT" 2>/dev/null || true
 			exit 1

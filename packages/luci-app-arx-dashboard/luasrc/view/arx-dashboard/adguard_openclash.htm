@@ -1,0 +1,132 @@
+<%+header%>
+<%
+local uci  = require "luci.model.uci"
+local http = require "luci.http"
+local u    = uci.cursor()
+
+local dnsmasq_sid
+u:foreach("dhcp", "dnsmasq", function(s)
+	if not dnsmasq_sid then dnsmasq_sid = s[".name"] end
+end)
+
+local servers = {}
+if dnsmasq_sid then
+	local lst = u:get_list("dhcp", dnsmasq_sid, "server")
+	if lst then
+		servers = type(lst) == "table" and lst or { lst }
+	end
+end
+
+local qs = http.getenv("QUERY_STRING") or ""
+local show_ok_add    = qs:match("applied=add")
+local show_ok_remove = qs:match("applied=remove")
+local err_bad        = qs:match("err=badport")
+local err_nod        = qs:match("err=nodnsmasq")
+%>
+<div class="page-header page-hd ani animate-in">
+  <div class="page-title-row">
+    <h1><svg class="arx-icon" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-shield-check"/></svg> AdGuard Home + OpenClash 共存</h1>
+    <span class="page-subtitle page-sub">dnsmasq → AdGuard（非 53 端口）→ OpenClash DNS（默认 7874）</span>
+  </div>
+</div>
+
+<% if show_ok_add then %>
+<div class="alert-message success animate-in">✅ 已尝试向 dnsmasq 添加转发（若原本已存在相同项则仅刷新）。请继续在 AdGuard / OpenClash 网页中完成下方「手动步骤」，并重启相关服务。</div>
+<% end %>
+<% if show_ok_remove then %>
+<div class="alert-message success animate-in">✅ 已从 dnsmasq 移除对应转发并重启 dnsmasq。</div>
+<% end %>
+<% if err_bad then %>
+<div class="alert-message error animate-in">❌ AdGuard 监听端口无效：须为 1–65535 且<strong>不能为 53</strong>（避免与 dnsmasq 冲突）。</div>
+<% end %>
+<% if err_nod then %>
+<div class="alert-message error animate-in">❌ 未找到 <code>dhcp</code> 中的 dnsmasq 段，无法写入 UCI。</div>
+<% end %>
+
+<!-- What this page does -->
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-file-text"/></svg>本页能做什么</h2>
+  <div class="arx-prose">
+  <p>参考社区教程整理的链路：<strong>客户端 → dnsmasq（53）→ AdGuard Home（自定义端口）→ OpenClash DNS（常见 7874）</strong>。
+  OpenWrt 侧可自动完成的只有「在 dnsmasq 增加/删除 <code>127.0.0.1#端口</code> 转发」；AdGuard 与 OpenClash 的界面选项因版本而异，须在各自 LuCI 中按下列说明勾选。</p>
+  </div>
+  <div class="arx-callout arx-callout--info" style="margin-top:10px">
+    思路来源：<a href="https://github.com/shawnpxtl/Actions-CMCC-RAX3000M/blob/master/tutorial/adguard-openclash.md" target="_blank" rel="noopener">Actions-CMCC-RAX3000M · adguard-openclash.md</a>
+  </div>
+</div>
+
+<!-- One-click operations -->
+<div class="arx-grid-2" style="margin-bottom:20px">
+  <!-- Add Forward -->
+  <div class="cbi-section animate-in" style="margin-bottom:0">
+    <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-arrow-up"/></svg>添加 dnsmasq 转发</h2>
+    <p style="font-size:13px">请先在 AdGuard Home 中将「重定向」设为<strong>作为 dnsmasq 的上游</strong>，并把监听端口设为下方填写的端口（勿用 53）。</p>
+    <form method="post" action="<%=url('admin/arx-dashboard/adguard_oc_apply')%>" style="margin-top:12px">
+      <input type="hidden" name="arx_oc_action" value="add">
+      <div class="cbi-value-field" style="margin-bottom:12px">
+        <label for="adg_port_add" style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:5px">AdGuard 监听端口</label>
+        <input class="cbi-input-text" type="number" name="adg_port" id="adg_port_add" value="5353" min="1" max="65535" required style="max-width:120px">
+      </div>
+      <button type="submit" class="cbi-button cbi-button-apply">添加转发 127.0.0.1#端口</button>
+    </form>
+  </div>
+  <!-- Remove Forward -->
+  <div class="cbi-section animate-in" style="margin-bottom:0">
+    <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-ban"/></svg>移除 dnsmasq 转发</h2>
+    <p style="font-size:13px">填入要移除的端口号，等价于在网络 → DHCP/DNS → DNS 转发中删除对应条目。提交后会执行 <code>dnsmasq restart</code>。</p>
+    <form method="post" action="<%=url('admin/arx-dashboard/adguard_oc_apply')%>" style="margin-top:12px">
+      <input type="hidden" name="arx_oc_action" value="remove">
+      <div class="cbi-value-field" style="margin-bottom:12px">
+        <label for="adg_port_rm" style="display:block;font-size:13px;color:var(--text-muted);margin-bottom:5px">要移除的端口</label>
+        <input class="cbi-input-text" type="number" name="adg_port" id="adg_port_rm" value="5353" min="1" max="65535" required style="max-width:120px">
+      </div>
+      <button type="submit" class="cbi-button cbi-button-remove">移除该条 dnsmasq 转发</button>
+    </form>
+  </div>
+</div>
+
+<!-- Current server list -->
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-scroll-text"/></svg>当前 dnsmasq server 列表</h2>
+  <pre class="arx-code-block" style="font-size:12px;line-height:1.6;max-height:12em;overflow-y:auto"><% if #servers == 0 then %>（无）<% else %><% for _, v in ipairs(servers) do %><%=pcdata(tostring(v))%>
+<% end %><% end %></pre>
+  <p style="font-size:12px;color:var(--text-muted);margin:8px 0 0">等价于 UCI：<code>uci get dhcp.@dnsmasq[0].server</code></p>
+</div>
+
+<!-- AdGuard Manual Steps -->
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-shield-check"/></svg>AdGuard Home 手动步骤</h2>
+  <ol class="arx-prose" style="list-style:decimal;margin-left:1.2em;padding:0">
+    <li>管理设置 → 重定向：<strong>作为 dnsmasq 的上游</strong>；监听端口使用<strong>非 53</strong>（与上方表单一致）。</li>
+    <li>设置 → DNS 设置 → 上游 DNS 服务器：填入 <code>127.0.0.1:7874</code>（OpenClash 默认 DNS 端口；若改过 OpenClash DNS 端口，请填实际端口）。</li>
+    <li>若上网异常，可尝试将 Bootstrap DNS 设为运营商 DNS。</li>
+  </ol>
+</div>
+
+<!-- OpenClash Manual Steps -->
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-unlock"/></svg>OpenClash 手动步骤</h2>
+  <ol class="arx-prose" style="list-style:decimal;margin-left:1.2em;padding:0">
+    <li>运行模式优先 <strong>Redir-Host</strong>；不行再试 <strong>Fake-IP</strong>。</li>
+    <li>插件设置 → DNS：关闭<strong>本地 DNS 劫持</strong>。</li>
+    <li>覆写设置 → DNS：勾选<strong>自定义上游 DNS</strong>；取消两个「追加 … DNS」类选项（若曾勾选）。</li>
+    <li>有私有 DNS 可在覆写中填写；否则可保持默认。</li>
+  </ol>
+</div>
+
+<!-- iOS / partial device note -->
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-wifi"/></svg>部分设备不通（如 iOS）</h2>
+  <p>可在该 WiFi 上把 DNS 手动设为<strong>路由器 LAN IP</strong>。其它情况可用 Android 查看当前 DNS 是否指向路由器。</p>
+</div>
+
+<!-- Related Links -->
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-globe"/></svg>相关链接</h2>
+  <div class="arx-link-row">
+    <a href="<%=url('admin/arx-dashboard/dns_chain')%>">DNS 解析链</a>
+    <a href="<%=url('admin/arx-dashboard/overview')%>">仪表盘</a>
+    <a href="<%=url('admin/arx-dashboard/recovery')%>">恢复说明</a>
+  </div>
+</div>
+<%+footer%>

@@ -53,6 +53,12 @@ check_openwrt() {
     fi
 }
 
+apply_openwrt_patches() {
+    if [ -f "$SCRIPT_DIR/scripts/apply-openwrt-patches.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/apply-openwrt-patches.sh" "$SCRIPT_DIR" "$OPENWRT_DIR"
+    fi
+}
+
 cmd_init() {
     echo -e "${BLUE}[→] 运行环境初始化脚本...${NC}"
     if [ ! -f "$SCRIPT_DIR/setup-env.sh" ]; then
@@ -66,10 +72,18 @@ cmd_init() {
 cmd_feed() {
     check_openwrt
     cd "$OPENWRT_DIR"
+    if [ -f "$SCRIPT_DIR/scripts/ensure-extra-feeds.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/ensure-extra-feeds.sh" "$(pwd)"
+    fi
     echo -e "${YELLOW}[→] 更新 feeds...${NC}"
     ./scripts/feeds update -a
-    echo -e "${YELLOW}[→] 安装 feeds 软件包...${NC}"
-    ./scripts/feeds install -a -f
+    echo -e "${YELLOW}[→] 安装 feeds 软件包（与 CI build.yml 一致）...${NC}"
+    ./scripts/feeds install -a -f -p packages
+    ./scripts/feeds install -a -f -p luci
+    ./scripts/feeds install -a -f -p routing
+    ./scripts/feeds install -a -f -p telephony || true
+    ./scripts/feeds install -a -f -p video || true
+    ./scripts/feeds install -a -f -p openclash
     echo -e "${GREEN}[✓] Feeds 完成${NC}"
 }
 
@@ -102,6 +116,7 @@ cmd_copy() {
 
 cmd_config() {
     check_openwrt
+    apply_openwrt_patches
     cd "$OPENWRT_DIR"
 
     local CONFIG_FILE="$SCRIPT_DIR/config/rax3000m.config"
@@ -132,6 +147,7 @@ cmd_download() {
 
 cmd_build() {
     check_openwrt
+    apply_openwrt_patches
     cd "$OPENWRT_DIR"
 
     local START_TIME=$(date +%s)
@@ -166,6 +182,7 @@ cmd_build() {
 
 cmd_quick() {
     check_openwrt
+    apply_openwrt_patches
     cd "$OPENWRT_DIR"
     echo -e "${YELLOW}[→] 快速增量编译固件...${NC}"
     # [M9] 同 cmd_build
@@ -191,10 +208,11 @@ cmd_distclean() {
     check_openwrt
     cd "$OPENWRT_DIR"
     echo -e "${YELLOW}[→] 完全清理（含下载缓存）...${NC}"
-    # [L4] 非交互式环境（CI/无 TTY）跳过危险操作
+    # [L4] 非交互式环境禁止静默「成功」：distclean 会删下载缓存，必须由人工在终端确认
     if [ ! -t 0 ]; then
-        echo -e "${YELLOW}非交互式环境，跳过 distclean（避免 CI 误删）${NC}"
-        return
+        echo -e "${RED}[✗] 非交互式环境无法执行 distclean（避免 CI/脚本误以为已清理）${NC}" >&2
+        echo -e "${YELLOW}请在本地终端交互运行: $0 distclean${NC}" >&2
+        exit 1
     fi
     read -p "  这将删除所有下载的源码和编译产物，确认? [y/N] " confirm
     if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
@@ -253,7 +271,11 @@ show_output() {
     if [ -d "$OUTPUT_DIR" ]; then
         echo -e "\n${CYAN}📦 编译产物:${NC}"
         ls -lh "$OUTPUT_DIR"/*sysupgrade* 2>/dev/null | awk '{print "  📄 " $9, "(" $5 ")"}'
+        ( ls -lh "$OUTPUT_DIR"/*-squashfs-sysupgrade.bin "$OUTPUT_DIR"/*-squashfs-factory.bin "$OUTPUT_DIR"/*-squashfs-initramfs-kernel.bin 2>/dev/null || true ) | awk '{print "  📦 " $9, "(" $5 ")  (.bin 别名，FIT 与 .itb / recovery 相同)"}'
+        ls -lh "$OUTPUT_DIR"/*initramfs* 2>/dev/null | awk '{print "  🧪 " $9, "(" $5 ")  (内存根文件系统 / 临时或救砖)"}'
         ls -lh "$OUTPUT_DIR"/*factory* 2>/dev/null | awk '{print "  🏭 " $9, "(" $5 ")"}'
+        echo ""
+        echo -e "${YELLOW}⛔ 引导工件:${NC} NAND 机（标签无 EC）裸刷/救砖只使用 ${GREEN}*nand-ddr3-*${NC} 或 ${GREEN}*nand-ddr4-*${NC} 的 preloader + fip；${RED}切勿${NC}刷 ${RED}*emmc-*${NC}（与 sysupgrade.itb 是否为「NAND 专用」无关：.itb 为 NAND/eMMC 共用）。"
         echo ""
         echo -e "${CYAN}📍 产物路径: $OUTPUT_DIR${NC}"
     else

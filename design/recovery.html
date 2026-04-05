@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>恢复说明 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.warn-tip{padding:11px 14px;background:rgba(245,158,11,.08);border-left:3px solid var(--warning);border-radius:var(--r-sm);font-size:13px;color:var(--warning);margin-top:10px}
+.code-block{background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);padding:12px 14px;font-size:13px;font-family:ui-monospace,monospace;margin-top:10px}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">状态 / <span>安全恢复与救砖说明</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+  <div class="content">
+    <div class="page-hd ani"><h1>🔧 安全恢复与救砖说明</h1><div class="page-sub">Failsafe、U-Boot 与升级注意</div></div>
+
+    <!-- Failsafe -->
+    <div class="card ani">
+      <div class="card-title">🚨 Failsafe 模式</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:10px">开机过程中在特定时机触发 failsafe，可进入最小系统以重置 root 密码或恢复网络配置。不同机型按键与时机不同，请以 <a href="https://openwrt.org/docs/guide-user/troubleshooting/failsafe_and_factory_reset" target="_blank" rel="noopener" style="color:var(--primary)">OpenWrt Failsafe 文档</a> 与当前设备在 OpenWrt 上的 Wiki 页为准。</p>
+      <ul style="font-size:13px;color:var(--text2);line-height:1.8;padding-left:20px;margin:0 0 10px">
+        <li>通常需在上电后 <strong>LED 闪烁阶段</strong>反复按 <strong>Reset</strong> 或指定键。</li>
+        <li>进入后可通过以太网固定 IP 访问（通常为 <code>192.168.1.1</code>）。</li>
+        <li>执行以下命令可清除覆盖层配置（会丢失已改配置）：</li>
+      </ul>
+      <div class="code-block">firstboot -y &amp;&amp; reboot</div>
+    </div>
+
+    <!-- U-Boot -->
+    <div class="card ani">
+      <div class="card-title">💾 U-Boot / TFTP 恢复</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:10px"><strong>RAX3000M / ARX3000M</strong> 请以本机型的 OpenWrt 设备页或厂商救砖教程为准；此处仅列通用思路：</p>
+      <ul style="font-size:13px;color:var(--text2);line-height:1.8;padding-left:20px;margin:0">
+        <li>上电中断进入 U-Boot（常通过串口或按住复位键上电）。</li>
+        <li>使用 TFTP / Web 恢复写入 factory 或 initramfs 镜像，具体命令因 Bootloader 而异。</li>
+      </ul>
+      <div class="warn-tip">⚠️ 具体命令因 Bootloader 而异，请以本机型文档为准。错误操作可能导致设备变砖，请谨慎操作。</div>
+    </div>
+
+    <!-- sysupgrade -->
+    <div class="card ani">
+      <div class="card-title">⬆️ sysupgrade 与保留配置</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:10px">跨大版本或更换分支升级时，<strong>保留配置</strong>可能导致 UCI 与新版默认值不兼容。若升级后异常，可在 failsafe 或首次启动失败时尝试不保留配置重刷，或手动清理 <code>/etc/config</code> 冲突项。</p>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:6px">建议：跨大版本升级时使用 <code>-n</code> 参数不保留配置：</p>
+      <div class="code-block">sysupgrade -n /tmp/firmware.bin</div>
+      <div class="warn-tip">⚠️ 使用 <code>-n</code> 参数将清除所有自定义配置，升级前请备份重要设置。</div>
+    </div>
+
+    <!-- Links -->
+    <div class="card ani">
+      <div class="card-title">🔗 相关链接</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        <a class="btn btn-g btn-sm" href="dashboard.html">📊 返回仪表盘</a>
+        <a class="btn btn-g btn-sm" href="dns_chain.html">🔗 DNS 解析链</a>
+        <a class="btn btn-g btn-sm" href="adguard_oc.html">🛡️ AdGuard+OC</a>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+</body>
+</html>

@@ -54,10 +54,10 @@ window.ARX_DASH_URLS = {
 	service_action: "<%=url('admin/arx-dashboard/service_action')%>"
 };
 </script>
-<div class="page-header">
+<div class="page-header page-hd ani animate-in">
     <div class="page-title-row">
-        <h1><span class="live-dot"></span> 系统仪表盘</h1>
-        <span class="page-subtitle">ARX3000M 实时系统状态总览</span>
+        <h1><span class="live-dot" aria-hidden="true"></span>系统仪表盘</h1>
+        <span class="page-subtitle page-sub">ARX3000M 实时系统状态总览</span>
     </div>
 </div>
 
@@ -158,7 +158,7 @@ window.ARX_DASH_URLS = {
     </div>
 </div>
 
-<div class="quick-actions-wrap">
+<div class="quick-actions-wrap qa-wrap">
 <div class="quick-actions" id="quick-actions-main">
     <a href="<%=url('admin/services/openclash')%>" class="quick-action-btn">
         <div class="qa-icon qa-icon--signal"><svg class="arx-icon" aria-hidden="true"><use href="#i-rocket"/></svg></div><span class="qa-label">OpenClash</span>
@@ -199,11 +199,14 @@ window.ARX_DASH_URLS = {
     <a href="<%=url('admin/arx-dashboard/dns_chain')%>" class="quick-action-btn">
         <div class="qa-icon qa-icon--accent"><svg class="arx-icon" aria-hidden="true"><use href="#i-globe"/></svg></div><span class="qa-label">DNS 解析链</span>
     </a>
+    <a href="<%=url('admin/arx-dashboard/adguard_openclash')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-shield-check"/></svg></div><span class="qa-label">AdGuard+OC</span>
+    </a>
 </div>
 <button type="button" class="quick-actions-expand" id="quick-actions-expand" aria-expanded="false" aria-controls="quick-actions-main">更多快捷方式</button>
 </div>
 
-<div class="status-grid" id="status-grid">
+<div class="status-grid stat-grid" id="status-grid">
     <div class="status-card animate-in" data-src="<%=url('admin/arx-dashboard/realtime')%>">
         <div class="card-header">
             <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-activity"/></svg></div>
@@ -294,7 +297,7 @@ window.ARX_DASH_URLS = {
     </div>
 </div>
 
-<div class="dashboard-columns animate-in">
+<div class="dashboard-columns two-col animate-in">
     <div class="dash-col">
         <div class="cbi-section">
             <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-file-text"/></svg>系统信息</h2>
@@ -341,8 +344,8 @@ window.ARX_DASH_URLS = {
         </div>
         <div class="cbi-section">
             <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-wifi"/></svg>网络接口</h2>
-            <div class="table-wrap">
-            <table id="iface-table">
+            <div class="table-wrap tbl-wrap">
+            <table id="iface-table" class="des-tbl">
                 <thead><tr><th>接口</th><th>IPv4 地址</th><th>MAC</th><th>RX</th><th>TX</th></tr></thead>
                 <tbody><tr><td colspan="5" style="padding:16px;"><div class="arx-skeleton arx-skeleton--row"></div><div class="arx-skeleton arx-skeleton--row" style="width:90%;margin-top:10px"></div><div class="arx-skeleton arx-skeleton--row" style="width:75%;margin-top:10px"></div></td></tr></tbody>
             </table>
@@ -435,5 +438,5 @@ window.ARX_DASH_URLS = {
     </details>
 </div>
 
-<% js = { "arx-dashboard/js/dashboard-overview.js?v=4" } %>
+<% js = { "arx-dashboard/js/dashboard-overview.js?v=5" } %>
 <%+footer%>

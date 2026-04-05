@@ -1,28 +1,55 @@
 <%+header%>
-<div class="page-header">
-    <div class="page-title-row">
-        <h1>安全恢复与救砖说明</h1>
-        <span class="page-subtitle">Failsafe、U-Boot 与升级注意</span>
-    </div>
+<div class="page-header page-hd ani animate-in">
+  <div class="page-title-row">
+    <h1><svg class="arx-icon arx-icon--title" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-wrench"/></svg> 安全恢复与救砖说明</h1>
+    <span class="page-subtitle page-sub">Failsafe、U-Boot 与升级注意</span>
+  </div>
 </div>
-<div class="cbi-section" style="max-width:52rem;line-height:1.65">
-    <h2 class="section-title">Failsafe 模式</h2>
-    <p>开机过程中在特定时机触发 failsafe，可进入最小系统以重置 root 密码或恢复网络配置。不同机型按键与时机不同，请以 <a href="https://openwrt.org/docs/guide-user/troubleshooting/failsafe_and_factory_reset" target="_blank" rel="noopener">OpenWrt Failsafe 文档</a> 与当前设备在 OpenWrt 上的 Wiki 页为准。</p>
-    <ul>
-        <li>通常需在上电后 LED 闪烁阶段反复按 <strong>Reset</strong> 或指定键。</li>
-        <li>进入后可通过以太网固定 IP 访问，执行 <code>firstboot -y && reboot</code> 可清除覆盖层配置（会丢失已改配置）。</li>
-    </ul>
 
-    <h2 class="section-title" style="margin-top:1.5rem">U-Boot / TFTP 恢复</h2>
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-alert-triangle"/></svg>Failsafe 模式</h2>
+  <div class="arx-prose">
+    <p>开机过程中在特定时机触发 failsafe，可进入最小系统以重置 root 密码或恢复网络配置。不同机型按键与时机不同，请以
+      <a href="https://openwrt.org/docs/guide-user/troubleshooting/failsafe_and_factory_reset" target="_blank" rel="noopener">OpenWrt Failsafe 文档</a>
+      与当前设备在 OpenWrt 上的 Wiki 页为准。
+    </p>
+    <ul>
+      <li>通常需在上电后 <strong>LED 闪烁阶段</strong>反复按 <strong>Reset</strong> 或指定键。</li>
+      <li>进入后可通过以太网固定 IP 访问（通常为 <code>192.168.1.1</code>）。</li>
+      <li>执行以下命令可清除覆盖层配置（会丢失已改配置）：</li>
+    </ul>
+  </div>
+  <pre class="arx-code-block">firstboot -y &amp;&amp; reboot</pre>
+</div>
+
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-hard-drive"/></svg>U-Boot / TFTP 恢复</h2>
+  <div class="arx-prose">
     <p><strong>RAX3000M / ARX3000M</strong> 请以本机型的 OpenWrt 设备页或厂商救砖教程为准；此处仅列通用思路：</p>
     <ul>
-        <li>上电中断进入 U-Boot（常通过串口或按住复位键上电）。</li>
-        <li>使用 TFTP / Web 恢复写入 factory 或 initramfs，具体命令因 Bootloader 而异。</li>
+      <li>上电中断进入 U-Boot（常通过串口或按住复位键上电）。</li>
+      <li>使用 TFTP / Web 恢复写入 factory 或 initramfs 镜像，具体命令因 Bootloader 而异。</li>
     </ul>
+  </div>
+  <div class="arx-callout arx-callout--warn">具体命令因 Bootloader 而异，请以本机型文档为准。错误操作可能导致设备变砖，请谨慎操作。</div>
+</div>
 
-    <h2 class="section-title" style="margin-top:1.5rem">sysupgrade 与「保留配置」</h2>
-    <p>跨大版本或更换分支升级时，<strong>保留配置</strong> 可能导致 UCI 与新版默认值不兼容。若升级后异常，可在 failsafe 或首次启动失败时尝试不保留配置重刷，或手动清理 <code>/etc/config</code> 冲突项。</p>
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-arrow-up"/></svg>sysupgrade 与保留配置</h2>
+  <div class="arx-prose">
+    <p>跨大版本或更换分支升级时，<strong>保留配置</strong>可能导致 UCI 与新版默认值不兼容。若升级后异常，可在 failsafe 或首次启动失败时尝试不保留配置重刷，或手动清理 <code>/etc/config</code> 冲突项。</p>
+    <p>建议：跨大版本升级时使用 <code>-n</code> 参数不保留配置：</p>
+  </div>
+  <pre class="arx-code-block">sysupgrade -n /tmp/firmware.bin</pre>
+  <div class="arx-callout arx-callout--warn">使用 <code>-n</code> 参数将清除所有自定义配置，升级前请备份重要设置。</div>
+</div>
 
-    <p style="margin-top:1.25rem"><a href="<%=url('admin/arx-dashboard/overview')%>">返回仪表盘</a></p>
+<div class="cbi-section animate-in">
+  <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-globe"/></svg>相关链接</h2>
+  <div class="arx-link-row">
+    <a href="<%=url('admin/arx-dashboard/overview')%>">返回仪表盘</a>
+    <a href="<%=url('admin/arx-dashboard/dns_chain')%>">DNS 解析链</a>
+    <a href="<%=url('admin/arx-dashboard/adguard_openclash')%>">AdGuard+OC</a>
+  </div>
 </div>
 <%+footer%>

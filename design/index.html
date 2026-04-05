@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ARX3000M — 登录</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg-base);margin-left:0}
+.login-wrap{width:100%;max-width:380px;padding:20px}
+.login-logo{text-align:center;margin-bottom:28px}
+.logo-big{width:64px;height:64px;margin:0 auto 13px;background:linear-gradient(135deg,var(--primary),var(--accent));border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 8px 32px rgba(var(--primary-rgb),.35)}
+.login-logo h1{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.login-logo p{font-size:13px;color:var(--text3);margin-top:4px}
+.login-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);padding:26px;box-shadow:0 8px 40px rgba(0,0,0,.35)}
+.err-msg{display:none;padding:9px 13px;margin-bottom:13px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);border-radius:var(--r-md);font-size:13px;color:var(--danger)}
+.btn-login{width:100%;padding:11px;background:linear-gradient(135deg,var(--primary),rgba(var(--primary-rgb),.8));color:#fff;border:none;border-radius:var(--r-md);font-size:14px;font-weight:600;cursor:pointer;transition:.15s;box-shadow:0 4px 16px rgba(var(--primary-rgb),.35)}
+.btn-login:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.device-bar{display:flex;align-items:center;justify-content:center;gap:0;margin-top:20px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.dev-stat{flex:1;text-align:center;padding:11px 8px;border-right:1px solid var(--border)}
+.dev-stat:last-child{border-right:none}
+.dev-val{font-size:14px;font-weight:700}.dev-lbl{font-size:10px;color:var(--text3);margin-top:2px}
+.login-footer{text-align:center;margin-top:18px;font-size:11px;color:var(--text3)}
+/* theme picker fixed top-right, no sidebar */
+.main{margin-left:0}
+.theme-picker-fixed{position:fixed;top:14px;right:18px;z-index:200}
+</style>
+</head>
+<body>
+
+<!-- Theme picker (fixed, no sidebar) -->
+<div class="theme-picker-fixed">
+  <div class="theme-picker">
+    <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+    <div class="theme-menu" id="theme-menu">
+      <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+      <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+      <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+      <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+    </div>
+  </div>
+</div>
+
+<div class="login-wrap ani">
+  <div class="login-logo">
+    <div class="logo-big">📡</div>
+    <h1>ARX3000M</h1>
+    <p>OpenWrt · MT7981B Filogic 820</p>
+  </div>
+
+  <div class="login-card">
+    <div class="err-msg" id="error-msg">密码错误，请重试</div>
+
+    <div class="form-row">
+      <label class="form-lbl">用户名</label>
+      <input class="form-inp" style="width:100%;opacity:.65" type="text" value="root" readonly>
+    </div>
+    <div class="form-row">
+      <label class="form-lbl">密码</label>
+      <input class="form-inp" style="width:100%" type="password" id="pwd" placeholder="输入管理员密码" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+
+    <button class="btn-login" onclick="doLogin()">登 录</button>
+
+    <div class="device-bar">
+      <div class="dev-stat">
+        <div class="dev-val" style="color:var(--success)">在线</div>
+        <div class="dev-lbl">设备状态</div>
+      </div>
+      <div class="dev-stat">
+        <div class="dev-val">52°C</div>
+        <div class="dev-lbl">SoC 温度</div>
+      </div>
+      <div class="dev-stat">
+        <div class="dev-val">3d 7h</div>
+        <div class="dev-lbl">运行时间</div>
+      </div>
+      <div class="dev-stat">
+        <div class="dev-val" style="color:var(--accent)">12</div>
+        <div class="dev-lbl">在线设备</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="login-footer">
+    ARX3000M Custom Firmware ·
+    <a href="dashboard.html" style="color:var(--primary);text-decoration:none">演示模式直接进入 →</a>
+  </div>
+</div>
+
+<script src="js/common.js"></script>
+<script>
+function doLogin() {
+  var pwd = document.getElementById('pwd').value;
+  var err = document.getElementById('error-msg');
+  if (pwd === '' || pwd === 'admin' || pwd === 'password') {
+    window.location.href = 'dashboard.html';
+  } else {
+    err.style.display = 'block';
+    document.getElementById('pwd').value = '';
+    document.getElementById('pwd').focus();
+    setTimeout(function(){ err.style.display = 'none'; }, 3000);
+  }
+}
+</script>
+</body>
+</html>

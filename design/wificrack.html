@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WiFi 握手包捕获 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.hero-banner{display:flex;align-items:flex-start;gap:13px;padding:15px 18px;background:linear-gradient(135deg,rgba(var(--primary-rgb),.12),rgba(var(--accent-rgb),.06));border:1px solid rgba(var(--primary-rgb),.22);border-radius:var(--r-lg);margin-bottom:14px}
+.hero-ico{width:42px;height:42px;flex-shrink:0;background:linear-gradient(135deg,var(--primary),var(--accent));border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff}
+.hero-txt{font-size:13px;color:var(--text2);line-height:1.6}
+.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px 24px}
+@media(max-width:640px){.settings-grid{grid-template-columns:1fr}}
+.tool-strip{display:flex;flex-wrap:wrap;gap:7px}
+.wifi-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:11px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:7px;transition:.15s}
+.wifi-row:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
+.wifi-title{font-weight:600;font-size:13px}.wifi-sub{font-size:11px;color:var(--text3);margin-top:1px}
+.history-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:11px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:7px;transition:.15s}
+.history-row:hover{border-color:rgba(var(--primary-rgb),.3)}
+.verify-box{padding:13px 16px;border-radius:var(--r-md);font-size:13px;line-height:1.55;margin-bottom:14px}
+.action-bar{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:14px}
+.stats-pills{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+.target-box{margin-top:13px;padding:11px 14px;background:var(--bg-input);border-radius:var(--r-md)}
+.panel-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;flex-wrap:wrap;gap:7px}
+.panel-hd h2{font-size:15px;font-weight:600}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">工具 / <span>WiFi 握手包捕获</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>🔓 WiFi 握手包捕获</h1>
+      <div class="page-sub">扫描周围 WiFi，选择目标抓取 WPA/WPA2 握手包</div>
+    </div>
+
+    <!-- Banner -->
+    <div class="hero-banner ani">
+      <div class="hero-ico">📡</div>
+      <div class="hero-txt"><strong>工作流程：</strong>选择抓包工具与超时 → 扫描并选定 AP → 等待 EAPOL/PMKID → 验证后可下载。抓包时本机 WiFi 可能短暂中断，属正常现象。</div>
+    </div>
+
+    <!-- Settings -->
+    <div class="card ani">
+      <div class="settings-grid">
+        <div>
+          <div class="section-head">抓包工具</div>
+          <div class="tool-strip">
+            <button class="tool-btn active" id="tb-hcx" onclick="selectTool(this,'hcxdumptool')">hcxdumptool</button>
+            <button class="tool-btn" id="tb-airo" onclick="selectTool(this,'airodump')">airodump-ng</button>
+            <button class="tool-btn" id="tb-tcp" onclick="selectTool(this,'tcpdump')">tcpdump</button>
+          </div>
+          <div class="tip-box" id="tool-tip">✅ 推荐：自动 PMKID + deauth，hashcat 官方推荐，成功率最高</div>
+        </div>
+        <div>
+          <div class="section-head">超时自动停止</div>
+          <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+            <select class="form-sel" id="timeout-sel">
+              <option value="0">不限时</option>
+              <option value="120">2 分钟</option>
+              <option value="300" selected>5 分钟</option>
+              <option value="600">10 分钟</option>
+              <option value="1800">30 分钟</option>
+            </select>
+            <span id="countdown" style="font-size:13px;color:var(--accent);font-variant-numeric:tabular-nums"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Panel -->
+    <div class="status-panel ani" id="status-panel">
+      <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+        <span class="badge b-m" id="status-badge">⏸ 空闲</span>
+        <span style="font-size:13px;color:var(--text2)" id="status-text">尚未开始抓包</span>
+        <span style="font-size:13px;color:var(--accent)" id="elapsed-text"></span>
+      </div>
+      <div class="target-box" id="target-box" style="display:none">
+        <span style="font-size:12px;color:var(--text3);margin-right:6px">目标</span>
+        <strong id="target-ssid" style="font-size:15px"></strong>
+        <span id="target-bssid" style="font-size:12px;color:var(--text3);margin-left:8px"></span>
+      </div>
+      <div class="stats-pills" id="stats-pills" style="display:none">
+        <span class="badge b-s" id="stat-eapol">EAPOL: 0</span>
+        <span class="badge b-p" id="stat-pmkid">PMKID: 0</span>
+        <span style="font-size:12px;color:var(--text3)" id="pcap-size"></span>
+      </div>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="action-bar ani">
+      <button class="btn btn-p" id="btn-scan" onclick="doScan()">🔍 扫描 WiFi</button>
+      <button class="btn btn-w" id="btn-deauth" style="display:none" onclick="doDeauth()">⚡ 发送 Deauth</button>
+      <button class="btn btn-g" id="btn-stop" style="display:none" onclick="doStop()">⏹ 停止</button>
+      <button class="btn btn-s" id="btn-download" style="display:none" onclick="ARX.toast('开始下载 .22000 文件','success')">⬇ 下载 .22000</button>
+      <button class="btn btn-g" id="btn-verify" style="display:none" onclick="doVerify()">🔬 验证质量</button>
+      <button class="btn btn-d" id="btn-clear" style="display:none" onclick="doClear()">🗑 清除</button>
+    </div>
+
+    <!-- Verify Result -->
+    <div id="verify-result"></div>
+
+    <!-- WiFi List -->
+    <div class="card ani" id="wifi-list-section" style="display:none">
+      <div class="panel-hd">
+        <h2>周围 WiFi</h2>
+        <span style="font-size:12px;color:var(--text3)">点击目标网络开始抓包（仅 WPA/WPA2）</span>
+      </div>
+      <div id="wifi-list"></div>
+    </div>
+
+    <!-- Log -->
+    <div class="card ani" id="log-section" style="display:none">
+      <div class="panel-hd">
+        <h2>实时日志</h2>
+        <label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="checkbox" id="auto-scroll" checked> 自动滚动
+        </label>
+      </div>
+      <pre class="log-pre" id="log-content"></pre>
+    </div>
+
+    <!-- History -->
+    <div class="card ani">
+      <div class="panel-hd">
+        <h2>抓包历史</h2>
+        <button class="btn btn-g btn-sm" onclick="ARX.toast('历史已刷新','success')">🔄 刷新</button>
+      </div>
+      <div id="history-list"></div>
+    </div>
+  </div>
+</div>
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+var S = { running:false, tool:'hcxdumptool', bssid:'', ssid:'', elapsed:0, timer:null, eapol:0, pmkid:0 };
+
+var TOOL_TIPS = {
+  hcxdumptool: '✅ 推荐：自动 PMKID + deauth，hashcat 官方推荐，成功率最高',
+  airodump:    '⚠️ 经典工具：支持指定信道，可配合手动 deauth 按钮',
+  tcpdump:     '⚠️ 被动监听：系统自带，只能等待客户端自然重连，成功率低'
+};
+
+var NETS = [
+  {ssid:'HomeNetwork_5G', bssid:'AA:BB:CC:11:22:33', signal:-42, ch:149, sec:'WPA2'},
+  {ssid:'TP-LINK_2.4G',   bssid:'D8:07:B6:44:55:66', signal:-58, ch:6,   sec:'WPA2'},
+  {ssid:'CMCC-Home',      bssid:'FC:D7:33:77:88:99', signal:-65, ch:11,  sec:'WPA'},
+  {ssid:'iPhone热点',      bssid:'3E:1A:2B:AA:BB:CC', signal:-72, ch:1,   sec:'WPA2'},
+  {ssid:'MERCURY_OPEN',   bssid:'74:DA:38:DD:EE:FF', signal:-78, ch:36,  sec:'OPEN'},
+  {ssid:'Xiaomi_AX6000',  bssid:'60:A4:B7:00:11:22', signal:-51, ch:100, sec:'WPA2'}
+];
+
+var HISTORY = [
+  {ssid:'HomeNetwork_5G', bssid:'AA:BB:CC:11:22:33', time:'2025-04-04 22:18', eapol:3, pmkid:0},
+  {ssid:'TP-LINK_2.4G',   bssid:'D8:07:B6:44:55:66', time:'2025-04-03 15:42', eapol:0, pmkid:2},
+  {ssid:'CMCC-Home',      bssid:'FC:D7:33:77:88:99', time:'2025-04-02 09:05', eapol:0, pmkid:0}
+];
+
+function selectTool(btn, id) {
+  document.querySelectorAll('.tool-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  S.tool = id;
+  document.getElementById('tool-tip').textContent = TOOL_TIPS[id] || '';
+}
+
+function sigColor(s){ return s>-60?'var(--success)':s>-75?'var(--warning)':'var(--danger)'; }
+function sigBars(s){ return s>-60?'▂▄▆█':s>-75?'▂▄▆_':'▂▄__'; }
+
+function doScan() {
+  var btn = document.getElementById('btn-scan');
+  btn.disabled = true; btn.textContent = '🔄 扫描中...';
+  setTimeout(function() {
+    btn.disabled = false; btn.textContent = '🔍 扫描 WiFi';
+    var list = document.getElementById('wifi-list');
+    list.innerHTML = NETS.map(function(n) {
+      var sc = sigColor(n.signal);
+      var can = n.sec === 'WPA2' || n.sec === 'WPA';
+      var secBadge = n.sec==='WPA2'?'<span class="badge b-s">WPA2</span>':n.sec==='WPA'?'<span class="badge b-p">WPA</span>':'<span class="badge b-m">OPEN</span>';
+      return '<div class="wifi-row">'
+        +'<div style="display:flex;align-items:center;gap:12px;min-width:0">'
+        +'<span style="font-family:monospace;font-size:17px;color:'+sc+';letter-spacing:1px">'+sigBars(n.signal)+'</span>'
+        +'<div><div class="wifi-title">'+n.ssid+'</div>'
+        +'<div class="wifi-sub">'+n.bssid+' · 信道 '+n.ch+' · '+n.signal+' dBm</div></div>'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:8px">'+secBadge
+        +(can?'<button class="btn btn-p btn-sm" onclick="doStart(\''+n.bssid+'\',\''+n.ssid+'\','+n.ch+')">🎯 开始抓包</button>'
+             :'<span style="font-size:12px;color:var(--text3)">不支持</span>')
+        +'</div></div>';
+    }).join('');
+    document.getElementById('wifi-list-section').style.display = '';
+    ARX.toast('发现 '+NETS.length+' 个 WiFi','success');
+  }, 1200);
+}
+
+function doStart(bssid, ssid, ch) {
+  if (!confirm('确定对 "'+ssid+'" 开始抓包？\n\n工具：'+S.tool+'\n注意：WiFi 可能短暂中断')) return;
+  S.running=true; S.bssid=bssid; S.ssid=ssid; S.elapsed=0; S.eapol=0; S.pmkid=0;
+  document.getElementById('wifi-list-section').style.display='none';
+  document.getElementById('target-box').style.display='';
+  document.getElementById('target-ssid').textContent=ssid;
+  document.getElementById('target-bssid').textContent=bssid;
+  document.getElementById('stats-pills').style.display='';
+  document.getElementById('stat-eapol').textContent='EAPOL: 0';
+  document.getElementById('stat-pmkid').textContent='PMKID: 0';
+  document.getElementById('pcap-size').textContent='';
+  document.getElementById('status-badge').className='badge b-d';
+  document.getElementById('status-badge').textContent='🔴 抓包中';
+  document.getElementById('status-text').textContent='正在捕获握手包...';
+  document.getElementById('elapsed-text').textContent='';
+  document.getElementById('status-panel').classList.add('running');
+  document.getElementById('btn-deauth').style.display='';
+  document.getElementById('btn-stop').style.display='';
+  document.getElementById('btn-scan').style.display='none';
+  document.getElementById('btn-download').style.display='none';
+  document.getElementById('btn-verify').style.display='none';
+  document.getElementById('btn-clear').style.display='none';
+  document.getElementById('log-section').style.display='';
+  var log = document.getElementById('log-content');
+  log.textContent='[INFO] Starting '+S.tool+' on wlan0\n[INFO] Target: '+ssid+' ('+bssid+')\n[INFO] Channel: '+ch;
+  S.timer = setInterval(function() {
+    S.elapsed++;
+    document.getElementById('elapsed-text').textContent='已运行 '+S.elapsed+'s';
+    if (S.elapsed % 3 === 0) {
+      if (Math.random()>0.7) S.eapol++;
+      if (Math.random()>0.8) S.pmkid++;
+      document.getElementById('stat-eapol').textContent='EAPOL: '+S.eapol;
+      document.getElementById('stat-pmkid').textContent='PMKID: '+S.pmkid;
+      document.getElementById('pcap-size').textContent=(S.elapsed*2.4).toFixed(1)+' KB';
+      log.textContent+='\n['+new Date().toLocaleTimeString()+'] Captured '+(S.eapol+S.pmkid)+' handshakes, pcap '+(S.elapsed*2.4).toFixed(1)+'KB';
+      if (document.getElementById('auto-scroll').checked) log.scrollTop=log.scrollHeight;
+    }
+    var tval = parseInt(document.getElementById('timeout-sel').value);
+    if (tval > 0) {
+      var rem = tval - S.elapsed;
+      document.getElementById('countdown').textContent = rem > 0 ? '剩余 '+rem+'s' : '';
+      if (rem <= 0) doStop();
+    }
+  }, 1000);
+  ARX.toast('开始抓包：'+ssid,'success');
+}
+
+function doDeauth() {
+  ARX.toast('已发送 5 个 Deauth 帧到 '+S.bssid,'warning');
+  var log = document.getElementById('log-content');
+  log.textContent+='\n['+new Date().toLocaleTimeString()+'] Sent 5 deauth frames to '+S.bssid;
+  log.scrollTop=log.scrollHeight;
+}
+
+function doStop() {
+  clearInterval(S.timer); S.running=false;
+  document.getElementById('status-panel').classList.remove('running');
+  document.getElementById('status-badge').className='badge b-m';
+  document.getElementById('status-badge').textContent='⏸ 已停止';
+  document.getElementById('status-text').textContent='抓包已停止';
+  document.getElementById('btn-deauth').style.display='none';
+  document.getElementById('btn-stop').style.display='none';
+  document.getElementById('btn-scan').style.display='';
+  document.getElementById('btn-download').style.display=S.eapol+S.pmkid>0?'':'none';
+  document.getElementById('btn-verify').style.display='';
+  document.getElementById('btn-clear').style.display='';
+  document.getElementById('countdown').textContent='';
+  ARX.toast('抓包已停止，EAPOL: '+S.eapol+'，PMKID: '+S.pmkid, S.eapol+S.pmkid>0?'success':'warning');
+}
+
+function doVerify() {
+  var vr = document.getElementById('verify-result');
+  if (S.eapol > 0) {
+    vr.innerHTML='<div class="verify-box" style="background:rgba(34,197,94,.1);border-left:3px solid var(--success)">✅ 优质：包含 '+S.eapol+' 条完整 EAPOL 握手（WPA*02），可直接用 hashcat 破解</div>';
+  } else if (S.pmkid > 0) {
+    vr.innerHTML='<div class="verify-box" style="background:rgba(245,158,11,.1);border-left:3px solid var(--warning)">⚠️ 可用：包含 '+S.pmkid+' 条 PMKID（WPA*01），部分 AP 支持，建议尝试破解</div>';
+  } else {
+    vr.innerHTML='<div class="verify-box" style="background:rgba(239,68,68,.1);border-left:3px solid var(--danger)">❌ 无效：文件中没有可用的握手记录</div>';
+  }
+}
+
+function doClear() {
+  if (!confirm('确定删除当前抓包文件？')) return;
+  S.eapol=0; S.pmkid=0;
+  document.getElementById('btn-download').style.display='none';
+  document.getElementById('btn-verify').style.display='none';
+  document.getElementById('btn-clear').style.display='none';
+  document.getElementById('verify-result').innerHTML='';
+  document.getElementById('target-box').style.display='none';
+  document.getElementById('stats-pills').style.display='none';
+  ARX.toast('已清除','success');
+}
+
+// Render history
+(function(){
+  var el = document.getElementById('history-list');
+  el.innerHTML = HISTORY.map(function(r) {
+    var badge = r.eapol>0?'<span class="badge b-s">EAPOL '+r.eapol+'</span>':r.pmkid>0?'<span class="badge b-p">PMKID '+r.pmkid+'</span>':'<span class="badge b-m">空</span>';
+    return '<div class="history-row">'
+      +'<div><div style="font-weight:600;font-size:13px">'+r.ssid+'</div>'
+      +'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+r.bssid+' · '+r.time+'</div></div>'
+      +'<div style="display:flex;align-items:center;gap:7px">'+badge
+      +'<button class="btn btn-g btn-sm" onclick="ARX.toast(\'验证中...\',\'success\')">🔬</button>'
+      +'<button class="btn btn-s btn-sm" onclick="ARX.toast(\'开始下载\',\'success\')">⬇</button>'
+      +'<button class="btn btn-d btn-sm" onclick="this.closest(\'.history-row\').remove();ARX.toast(\'已删除\',\'success\')">🗑</button>'
+      +'</div></div>';
+  }).join('');
+})();
+</script>
+</body>
+</html>

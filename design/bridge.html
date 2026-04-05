@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WiFi 桥接总览 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.bridge-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px;margin-bottom:14px}
+.bridge-hd{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.bridge-ico{width:44px;height:44px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.bridge-title{font-size:15px;font-weight:700}.bridge-sub{font-size:12px;color:var(--text3);margin-top:2px}
+.topo-node{text-align:center;padding:14px 18px;background:var(--bg-input);border-radius:var(--r-md);border:1px solid var(--border)}
+.topo-node.highlight{background:rgba(var(--primary-rgb),.1);border-color:rgba(var(--primary-rgb),.3)}
+.topo-ico{font-size:24px}.topo-lbl{font-size:11px;color:var(--text3);margin-top:4px}.topo-val{font-size:12px;font-weight:600}
+.topo-arr{padding:0 12px;font-size:20px}
+</style>
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+
+<!-- ===== MAIN ===== -->
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">管理 / <span>WiFi 桥接总览</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>🔗 WiFi 上行 / 桥接 / 中继总览</h1>
+      <div class="page-sub">只读视图</div>
+    </div>
+
+    <div class="readonly-notice ani">
+      ⚠️ 此页面为只读视图。如需修改桥接配置，请前往 <strong>网络 → 接口</strong> 或 <strong>网络 → 无线</strong>。
+    </div>
+
+    <!-- WiFi Uplink -->
+    <div class="bridge-card ani">
+      <div class="bridge-hd">
+        <div class="bridge-ico" style="background:rgba(var(--accent-rgb),.15)">📶</div>
+        <div>
+          <div class="bridge-title">WiFi 上行（Station 模式）</div>
+          <div class="bridge-sub">本机作为 WiFi 客户端连接上游 AP</div>
+        </div>
+        <span class="badge b-s" style="margin-left:auto">已连接</span>
+      </div>
+      <div class="info-grid">
+        <div class="info-cell"><div class="info-lbl">上游 SSID</div><div class="info-val">HomeNetwork_5G</div></div>
+        <div class="info-cell"><div class="info-lbl">BSSID</div><div class="info-val" style="font-family:monospace;font-size:12px">AA:BB:CC:11:22:33</div></div>
+        <div class="info-cell"><div class="info-lbl">信号强度</div><div class="info-val" style="color:var(--success)">-42 dBm</div></div>
+        <div class="info-cell"><div class="info-lbl">信道</div><div class="info-val">149 (5GHz)</div></div>
+        <div class="info-cell"><div class="info-lbl">本机 IP</div><div class="info-val" style="font-family:monospace">192.168.0.100</div></div>
+        <div class="info-cell"><div class="info-lbl">接口</div><div class="info-val">wlan1</div></div>
+        <div class="info-cell"><div class="info-lbl">TX 速率</div><div class="info-val">866 Mbps</div></div>
+        <div class="info-cell"><div class="info-lbl">RX 速率</div><div class="info-val">780 Mbps</div></div>
+      </div>
+    </div>
+
+    <!-- Relayd -->
+    <div class="bridge-card ani">
+      <div class="bridge-hd">
+        <div class="bridge-ico" style="background:rgba(var(--primary-rgb),.15)">🔁</div>
+        <div>
+          <div class="bridge-title">relayd 中继</div>
+          <div class="bridge-sub">将 WiFi 上行桥接到有线 LAN</div>
+        </div>
+        <span class="badge b-s" style="margin-left:auto">运行中</span>
+      </div>
+      <div class="info-grid">
+        <div class="info-cell"><div class="info-lbl">上行接口</div><div class="info-val">wlan1</div></div>
+        <div class="info-cell"><div class="info-lbl">下行接口</div><div class="info-val">br-lan</div></div>
+        <div class="info-cell"><div class="info-lbl">中继 IP</div><div class="info-val" style="font-family:monospace">192.168.0.100</div></div>
+        <div class="info-cell"><div class="info-lbl">PID</div><div class="info-val" style="font-family:monospace">3421</div></div>
+      </div>
+    </div>
+
+    <!-- AP -->
+    <div class="bridge-card ani">
+      <div class="bridge-hd">
+        <div class="bridge-ico" style="background:rgba(34,197,94,.15)">📡</div>
+        <div>
+          <div class="bridge-title">本机 AP（接入点）</div>
+          <div class="bridge-sub">向下游设备提供 WiFi 接入</div>
+        </div>
+        <span class="badge b-s" style="margin-left:auto">广播中</span>
+      </div>
+      <div class="info-grid">
+        <div class="info-cell"><div class="info-lbl">2.4G SSID</div><div class="info-val">ARX3000M</div></div>
+        <div class="info-cell"><div class="info-lbl">5G SSID</div><div class="info-val">ARX3000M_5G</div></div>
+        <div class="info-cell"><div class="info-lbl">2.4G 信道</div><div class="info-val">6</div></div>
+        <div class="info-cell"><div class="info-lbl">5G 信道</div><div class="info-val">36</div></div>
+        <div class="info-cell"><div class="info-lbl">已连接设备</div><div class="info-val" style="color:var(--success)">8 台</div></div>
+        <div class="info-cell"><div class="info-lbl">加密方式</div><div class="info-val">WPA2-PSK</div></div>
+      </div>
+    </div>
+
+    <!-- Topology -->
+    <div class="card ani">
+      <div class="card-title">🗺️ 网络拓扑示意</div>
+      <div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;padding:18px 0">
+        <div class="topo-node">
+          <div class="topo-ico">🌐</div>
+          <div class="topo-lbl">上游 AP</div>
+          <div class="topo-val">HomeNetwork_5G</div>
+        </div>
+        <div class="topo-arr" style="color:var(--accent)">→</div>
+        <div class="topo-node highlight">
+          <div class="topo-ico">📡</div>
+          <div class="topo-lbl">ARX3000M</div>
+          <div class="topo-val">wlan1 (STA) + AP</div>
+          <div style="font-size:11px;color:var(--text3)">relayd</div>
+        </div>
+        <div class="topo-arr" style="color:var(--success)">→</div>
+        <div class="topo-node">
+          <div class="topo-ico">📱</div>
+          <div class="topo-lbl">下游设备</div>
+          <div class="topo-val">8 台已连接</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+</body>
+</html>

@@ -1,10 +1,25 @@
-/* Realtime speed gauge (Mbps) */
+/* Realtime speed gauge (Mbps) — layout inspired by design/static gauge-wrap */
 .dash-speed-gauge {
     margin: 0 0 18px;
-    padding: 14px 16px 12px;
-    border-radius: var(--radius-md);
+    padding: 18px 16px 14px;
+    border-radius: var(--radius-lg);
     background: var(--bg-card);
     border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+    position: relative;
+    overflow: hidden;
+}
+
+.dash-speed-gauge::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--primary-light));
+    opacity: 0.5;
+    pointer-events: none;
 }
 .dash-speed-gauge__inner {
     max-width: 440px;
@@ -41,13 +56,22 @@
     letter-spacing: 0.04em;
     margin-bottom: 2px;
 }
+.dash-speed-gauge__col:first-child .dash-speed-gauge__mbps {
+    color: var(--accent);
+}
+
+.dash-speed-gauge__col:last-child .dash-speed-gauge__mbps {
+    color: var(--warning);
+}
+
 .dash-speed-gauge__mbps {
     display: inline-block;
-    font-size: 22px;
-    font-weight: 700;
+    font-size: 26px;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
     color: var(--text-primary);
-    line-height: 1.15;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
     transition: color 0.2s ease;
 }
 .dash-speed-gauge__unit {
@@ -75,6 +99,14 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
+}
+.dashboard-columns.two-col {
+    gap: 14px;
+}
+.status-grid.stat-grid {
+    grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+    gap: 11px;
+    margin-bottom: 14px;
 }
 .dash-col {
     display: flex;
@@ -175,14 +207,14 @@
 .storage-warn { color: var(--warning); }
 .storage-danger { color: var(--danger); }
 
-/* Firmware spotlight card */
+/* Firmware spotlight card (design: .fw-card gradient panel) */
 .firmware-card {
     margin-bottom: 16px;
     padding: 18px 20px;
-    border-radius: var(--radius-md, 12px);
-    background: linear-gradient(135deg, rgba(var(--primary-rgb, 91, 107, 192), 0.12), rgba(139, 92, 246, 0.08));
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    border-radius: var(--radius-lg, 14px);
+    background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.11), rgba(var(--accent-rgb), 0.06));
+    border: 1px solid rgba(var(--primary-rgb), 0.22);
+    box-shadow: var(--shadow-md);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
 }

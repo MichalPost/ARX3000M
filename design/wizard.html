@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>设置向导 — ARX3000M</title>
+<link rel="stylesheet" href="css/theme.css">
+<style>
+.wizard-wrap{max-width:600px;margin:0 auto}
+.wizard-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);padding:28px}
+.wiz-title{font-size:19px;font-weight:700;margin-bottom:5px}
+.wiz-sub{font-size:13px;color:var(--text3);margin-bottom:22px}
+.wiz-nav{display:flex;justify-content:space-between;margin-top:22px;padding-top:18px;border-top:1px solid var(--border)}
+.panel{display:none}.panel.active{display:block}
+.sum-item{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(var(--primary-rgb),.06);font-size:13px}
+.sum-item:last-child{border-bottom:none}
+.sum-key{color:var(--text3)}.sum-val{font-weight:600}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">📡</div>
+    <div><div class="sb-logo-name">ARX3000M</div><div class="sb-logo-sub">OpenWrt · MT7981B</div></div>
+  </div>
+  <nav class="sb-nav" id="sb-nav"></nav>
+  <div class="sb-footer">v2025.04 · RAX3000M</div>
+</aside>
+<div class="main">
+  <div class="topbar">
+    <button class="topbar-menu-btn" id="topbar-menu-btn" title="显示侧边栏">☰</button>
+    <div class="topbar-bc">系统 / <span>设置向导</span></div>
+    <div class="topbar-r">
+      <span class="live-dot"></span>
+      <div class="theme-picker">
+        <button class="theme-btn" id="theme-picker-btn">🎨 <span id="theme-btn-label">主题</span> ▾</button>
+        <div class="theme-menu" id="theme-menu">
+          <button class="theme-opt" data-theme="dark"><span class="theme-dot" style="background:#6366f1"></span>深色</button>
+          <button class="theme-opt" data-theme="light"><span class="theme-dot" style="background:#4f46e5"></span>浅色</button>
+          <button class="theme-opt" data-theme="sky"><span class="theme-dot" style="background:#0284c7"></span>天蓝</button>
+          <button class="theme-opt" data-theme="aurora"><span class="theme-dot" style="background:#a78bfa"></span>极光</button>
+        </div>
+      </div>
+      <span id="topbar-clock"></span>
+    </div>
+  </div>
+  <div class="content">
+    <div class="page-hd ani">
+      <h1>🧙 设置向导</h1>
+      <div class="page-sub">快速完成 ARX3000M 初始配置</div>
+    </div>
+    <div class="wizard-wrap ani">
+      <div class="step-bar" id="step-bar">
+        <div class="step-item done" id="si-1"><div class="step-circle">✓</div><div class="step-lbl">密码</div></div>
+        <div class="step-item active" id="si-2"><div class="step-circle">2</div><div class="step-lbl">WiFi</div></div>
+        <div class="step-item" id="si-3"><div class="step-circle">3</div><div class="step-lbl">WAN</div></div>
+        <div class="step-item" id="si-4"><div class="step-circle">4</div><div class="step-lbl">时区</div></div>
+        <div class="step-item" id="si-5"><div class="step-circle">5</div><div class="step-lbl">完成</div></div>
+      </div>
+      <div class="wizard-card">
+        <div class="panel active" id="panel-2">
+          <div class="wiz-title">📶 配置 WiFi</div>
+          <div class="wiz-sub">设置 2.4GHz 和 5GHz 无线网络名称与密码。</div>
+          <div class="form-row">
+            <label class="form-lbl">2.4GHz 网络名称 (SSID)</label>
+            <input class="form-inp" style="width:100%" type="text" value="ARX3000M" id="ssid24">
+          </div>
+          <div class="form-row">
+            <label class="form-lbl">5GHz 网络名称 (SSID)</label>
+            <input class="form-inp" style="width:100%" type="text" value="ARX3000M_5G" id="ssid5">
+          </div>
+          <div class="form-row">
+            <label class="form-lbl">WiFi 密码（两个频段共用）</label>
+            <input class="form-inp" style="width:100%" type="password" placeholder="至少 8 位" id="wifipwd">
+            <div class="form-hint">留空则保持当前密码不变</div>
+          </div>
+          <div class="wiz-nav">
+            <button class="btn btn-g" onclick="showStep(1)">← 上一步</button>
+            <button class="btn btn-p" onclick="showStep(3)">下一步 →</button>
+          </div>
+        </div>
+        <div class="panel" id="panel-3">
+          <div class="wiz-title">🌐 WAN 连接方式</div>
+          <div class="wiz-sub">选择您的宽带接入方式。</div>
+          <div class="form-row">
+            <label class="form-lbl">连接类型</label>
+            <select class="form-sel" style="width:100%" id="wan-type" onchange="togglePPPoE()">
+              <option value="dhcp">DHCP（自动获取，适合大多数宽带）</option>
+              <option value="pppoe">PPPoE（拨号，需要账号密码）</option>
+              <option value="static">静态 IP</option>
+            </select>
+          </div>
+          <div id="pppoe-fields" style="display:none">
+            <div class="form-row">
+              <label class="form-lbl">宽带账号</label>
+              <input class="form-inp" style="width:100%" type="text" placeholder="运营商提供的账号">
+            </div>
+            <div class="form-row">
+              <label class="form-lbl">宽带密码</label>
+              <input class="form-inp" style="width:100%" type="password" placeholder="运营商提供的密码">
+            </div>
+          </div>
+          <div class="wiz-nav">
+            <button class="btn btn-g" onclick="showStep(2)">← 上一步</button>
+            <button class="btn btn-p" onclick="showStep(4)">下一步 →</button>
+          </div>
+        </div>
+        <div class="panel" id="panel-4">
+          <div class="wiz-title">🕐 时区与 NTP</div>
+          <div class="wiz-sub">设置正确的时区确保日志时间准确。</div>
+          <div class="form-row">
+            <label class="form-lbl">时区</label>
+            <select class="form-sel" style="width:100%" id="tz-sel">
+              <option value="Asia/Shanghai" selected>Asia/Shanghai（中国标准时间 UTC+8）</option>
+              <option value="Asia/Hong_Kong">Asia/Hong_Kong</option>
+              <option value="Asia/Tokyo">Asia/Tokyo</option>
+              <option value="UTC">UTC</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-lbl">NTP 服务器</label>
+            <input class="form-inp" style="width:100%" type="text" value="ntp.aliyun.com">
+            <div class="form-hint">留空使用默认 OpenWrt NTP 服务器</div>
+          </div>
+          <div class="wiz-nav">
+            <button class="btn btn-g" onclick="showStep(3)">← 上一步</button>
+            <button class="btn btn-p" onclick="applyWizard()">应用配置 ✓</button>
+          </div>
+        </div>
+        <div class="panel" id="panel-5">
+          <div style="font-size:52px;text-align:center;margin-bottom:14px">🎉</div>
+          <div style="font-size:20px;font-weight:700;text-align:center;margin-bottom:7px">配置完成！</div>
+          <div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:20px">ARX3000M 已完成初始配置，正在应用设置...</div>
+          <div style="background:var(--bg-input);border-radius:var(--r-md);padding:14px;margin-bottom:20px">
+            <div class="sum-item"><span class="sum-key">WiFi 2.4G</span><span class="sum-val" id="sum-ssid24">ARX3000M</span></div>
+            <div class="sum-item"><span class="sum-key">WiFi 5G</span><span class="sum-val" id="sum-ssid5">ARX3000M_5G</span></div>
+            <div class="sum-item"><span class="sum-key">WAN 类型</span><span class="sum-val" id="sum-wan">DHCP</span></div>
+            <div class="sum-item"><span class="sum-key">时区</span><span class="sum-val" id="sum-tz">Asia/Shanghai</span></div>
+          </div>
+          <div style="text-align:center">
+            <a href="dashboard.html" class="btn btn-p" style="padding:10px 28px">前往仪表盘 →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="js/sidebar.js"></script>
+<script src="js/common.js"></script>
+<script>
+var curStep = 2;
+function showStep(n) {
+  for (var i = 1; i <= 5; i++) {
+    var p = document.getElementById('panel-' + i);
+    var s = document.getElementById('si-' + i);
+    if (p) p.classList.toggle('active', i === n);
+    if (s) {
+      s.classList.remove('done','active');
+      var circ = s.querySelector('.step-circle');
+      if (i < n) { s.classList.add('done'); circ.textContent = '✓'; }
+      else if (i === n) { s.classList.add('active'); circ.textContent = i; }
+      else { circ.textContent = i; }
+    }
+  }
+  curStep = n;
+}
+function togglePPPoE() {
+  var t = document.getElementById('wan-type').value;
+  document.getElementById('pppoe-fields').style.display = t === 'pppoe' ? '' : 'none';
+}
+function applyWizard() {
+  document.getElementById('sum-ssid24').textContent = document.getElementById('ssid24').value || 'ARX3000M';
+  document.getElementById('sum-ssid5').textContent  = document.getElementById('ssid5').value  || 'ARX3000M_5G';
+  var wt = document.getElementById('wan-type');
+  document.getElementById('sum-wan').textContent = wt.options[wt.selectedIndex].text.split('（')[0];
+  document.getElementById('sum-tz').textContent = document.getElementById('tz-sel').value;
+  showStep(5);
+  ARX.toast('配置已应用！', 'success');
+}
+</script>
+</body>
+</html>

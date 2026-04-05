@@ -7,6 +7,9 @@
 
 set -e
 
+# 与 CI .github/workflows/build.yml 中 OPENWRT_BRANCH 保持一致
+OPENWRT_BRANCH="${OPENWRT_BRANCH:-main}"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -86,12 +89,14 @@ clone_openwrt() {
     cd "$WORK_DIR"
 
     if [ -d "openwrt" ]; then
-        echo -e "${YELLOW}[!] openwrt 目录已存在，跳过克隆${NC}"
+        echo -e "${YELLOW}[!] openwrt 目录已存在，同步分支 ${OPENWRT_BRANCH}...${NC}"
         cd openwrt
-        git pull --ff-only 2>/dev/null || true
+        git fetch origin "${OPENWRT_BRANCH}" --depth 1 2>/dev/null || true
+        git checkout "${OPENWRT_BRANCH}" 2>/dev/null || true
+        git pull --ff-only origin "${OPENWRT_BRANCH}" 2>/dev/null || true
     else
-        echo -e "\n${YELLOW}[→] 克隆 OpenWrt 官方源码...${NC}"
-        git clone https://github.com/openwrt/openwrt.git --depth 1
+        echo -e "\n${YELLOW}[→] 克隆 OpenWrt 官方源码 (${OPENWRT_BRANCH})...${NC}"
+        git clone https://github.com/openwrt/openwrt.git --depth 1 --branch "${OPENWRT_BRANCH}"
         cd openwrt
     fi
 
@@ -100,10 +105,19 @@ clone_openwrt() {
 
 # ---- 更新 feeds 并安装软件包 ----
 update_feeds() {
+    local PROJECT_ROOT="${1:-}"
     echo -e "\n${YELLOW}[→] 更新 feeds...${NC}"
+    if [ -n "$PROJECT_ROOT" ] && [ -f "$PROJECT_ROOT/scripts/ensure-extra-feeds.sh" ]; then
+        bash "$PROJECT_ROOT/scripts/ensure-extra-feeds.sh" "$(pwd)"
+    fi
     ./scripts/feeds update -a
-    echo -e "${YELLOW}[→] 安装 feeds 软件包...${NC}"
-    ./scripts/feeds install -a -f
+    echo -e "${YELLOW}[→] 安装 feeds 软件包（与 CI build.yml 一致）...${NC}"
+    ./scripts/feeds install -a -f -p packages
+    ./scripts/feeds install -a -f -p luci
+    ./scripts/feeds install -a -f -p routing
+    ./scripts/feeds install -a -f -p telephony || true
+    ./scripts/feeds install -a -f -p video || true
+    ./scripts/feeds install -a -f -p openclash
     echo -e "${GREEN}[✓] Feeds 更新安装完成${NC}"
 }
 
@@ -115,21 +129,25 @@ copy_custom_packages() {
         return
     fi
 
-    echo -e "\n${YELLOW}[→] 复制自定义 LuCI 包...${NC}"
+    echo -e "\n${YELLOW}[→] 复制自定义 LuCI 包（与 build.sh copy 一致）...${NC}"
 
-    # 创建 custom feed 目录
     mkdir -p package/custom
 
-    # 复制自定义应用模块
     if [ -d "$PROJECT_ROOT/packages" ]; then
-        cp -r "$PROJECT_ROOT/packages/"* package/custom/ 2>/dev/null || true
-        echo -e "${GREEN}  └─ 自定义应用模块已复制${NC}"
+        for pkg in "$PROJECT_ROOT/packages/"*/; do
+            if [ -d "$pkg" ]; then
+                pkg_name=$(basename "$pkg")
+                rm -rf "package/custom/$pkg_name"
+                cp -r "$pkg" "package/custom/"
+                echo -e "${GREEN}  └─ $pkg_name${NC}"
+            fi
+        done
     fi
 
-    # 复制自定义主题
     if [ -d "$PROJECT_ROOT/theme" ]; then
-        cp -r "$PROJECT_ROOT/theme" package/custom/luci-theme-arx3000m 2>/dev/null || true
-        echo -e "${GREEN}  └─ 自定义主题已复制${NC}"
+        rm -rf package/custom/luci-theme-arx3000m
+        cp -r "$PROJECT_ROOT/theme" package/custom/luci-theme-arx3000m
+        echo -e "${GREEN}  └─ luci-theme-arx3000m${NC}"
     fi
 
     echo -e "${GREEN}[✓] 自定义包复制完成${NC}"
@@ -161,8 +179,11 @@ main() {
     setup_git
     create_workspace "$WORK_DIR"
     clone_openwrt
+    if [ -f "$PROJECT_ROOT/scripts/apply-openwrt-patches.sh" ]; then
+        bash "$PROJECT_ROOT/scripts/apply-openwrt-patches.sh" "$PROJECT_ROOT" "$WORK_DIR/openwrt"
+    fi
     copy_custom_packages "$PROJECT_ROOT"
-    update_feeds
+    update_feeds "$PROJECT_ROOT"
     load_config "$PROJECT_ROOT"
 
     echo -e "\n${BLUE}============================================${NC}"

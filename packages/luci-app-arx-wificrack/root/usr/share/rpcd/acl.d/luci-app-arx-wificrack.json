@@ -1,14 +1,16 @@
 {
     "arx-wificrack": {
-        "description": "ARX3000M WiFi Handshake Capture",
+        "description": "ARX3000M WiFi Handshake Capture + Evil Twin",
         "read": {
             "file": {
-                "/tmp/arx-wificrack/*": [ "read" ]
+                "/tmp/arx-wificrack/*": [ "read" ],
+                "/tmp/arx-et/*": [ "read" ]
             }
         },
         "write": {
             "file": {
-                "/tmp/arx-wificrack/*": [ "write" ]
+                "/tmp/arx-wificrack/*": [ "write" ],
+                "/tmp/arx-et/*": [ "write" ]
             }
         }
     }

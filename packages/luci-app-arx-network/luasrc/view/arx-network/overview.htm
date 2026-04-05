@@ -1,10 +1,14 @@
 <%+header%>
-<h1>🌐 高级网络工具</h1>
-<p style="margin-bottom:24px;color:var(--text-muted);">ARX3000M 网络功能总览</p>
+<div class="page-header page-hd ani animate-in">
+    <div class="page-title-row">
+        <h1><svg class="arx-icon" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-globe"/></svg> 高级网络工具</h1>
+        <span class="page-subtitle page-sub">ARX3000M 网络功能总览</span>
+    </div>
+</div>
 
 <div class="cbi-section animate-in" id="arx-net-health-dash" style="margin-bottom:20px;display:none;">
-    <h2 style="margin-bottom:8px;">网络健康（与仪表盘同源）</h2>
-    <p style="margin:0 0 12px 0;font-size:12px;color:var(--text-muted);">来自 arx-dashboard 聚合接口；未安装仪表盘时本块自动隐藏。</p>
+    <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-activity"/></svg>网络健康（与仪表盘同源）</h2>
+    <p class="arx-prose" style="font-size:12px;margin-bottom:12px">来自 arx-dashboard 聚合接口；未安装仪表盘时本块自动隐藏。</p>
     <div class="dash-hero dash-hero--health" style="margin:0;">
         <div class="dash-hero__item"><span class="dash-hero__label">DDNS</span><span class="dash-hero__value" id="nh-ddns">—</span></div>
         <div class="dash-hero__sep" aria-hidden="true"></div>
@@ -18,21 +22,21 @@
     </div>
 </div>
 
-<div class="status-grid">
+<div class="status-grid stat-grid">
     <div class="status-card card-cpu animate-in" id="ddns-card">
-        <div class="card-icon">🌍</div>
+        <div class="card-icon"><svg class="arx-icon" aria-hidden="true" style="width:22px;height:22px"><use href="#i-globe"/></svg></div>
         <div class="card-label">DDNS 服务</div>
         <div class="card-value" id="ddns-value">--</div>
         <div class="card-sub" id="ddns-sub">动态 DNS</div>
     </div>
     <div class="status-card card-mem animate-in" id="upnp-card">
-        <div class="card-icon">↔️</div>
+        <div class="card-icon"><svg class="arx-icon" aria-hidden="true" style="width:22px;height:22px"><use href="#i-arrow-left-right"/></svg></div>
         <div class="card-label">UPnP / NAT-PMP</div>
         <div class="card-value" id="upnp-value">--</div>
         <div class="card-sub" id="upnp-sub">端口映射</div>
     </div>
     <div class="status-card card-uptime animate-in">
-        <div class="card-icon">🛡️</div>
+        <div class="card-icon"><svg class="arx-icon" aria-hidden="true" style="width:22px;height:22px"><use href="#i-shield"/></svg></div>
         <div class="card-label">防火墙</div>
         <div class="card-value" id="fw-value">--</div>
         <div class="card-sub" id="fw-sub">规则统计</div>
@@ -40,12 +44,12 @@
 </div>
 
 <div class="cbi-section animate-in">
-    <h2>⚡ 快捷操作</h2>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;">
-        <a href="<%=url('admin/arx-network/portfw')%>" class="cbi-button cbi-button-add">➕ 添加端口转发</a>
-        <a href="<%=url('admin/arx-network/firewall_rules')%>" class="cbi-button cbi-button-add">🛡️ 编辑防火墙规则</a>
-        <a href="<%=url('admin/arx-network/diagnostics')%>" class="cbi-button cbi-button-link">🔧 网络诊断工具</a>
-        <button onclick="refreshStatus()" class="cbi-button cbi-button-apply">🔄 刷新状态</button>
+    <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-rocket"/></svg>快捷操作</h2>
+    <div class="arx-action-row" style="margin-top:4px">
+        <a href="<%=url('admin/arx-network/portfw')%>" class="cbi-button cbi-button-add">添加端口转发</a>
+        <a href="<%=url('admin/arx-network/firewall_rules')%>" class="cbi-button cbi-button-add">编辑防火墙规则</a>
+        <a href="<%=url('admin/arx-network/diagnostics')%>" class="cbi-button cbi-button-link">网络诊断工具</a>
+        <button onclick="refreshStatus()" class="cbi-button cbi-button-apply">刷新状态</button>
     </div>
 </div>
 
