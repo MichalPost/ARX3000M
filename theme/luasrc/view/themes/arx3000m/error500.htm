@@ -6,11 +6,14 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
     <title>500 · <%= pcdata(luci.sys.hostname()) %></title>
+    <link rel="icon" href="<%=media%>/favicon.svg" type="image/svg+xml">
     <script>
-    (function(){try{var T=['dark','light','sky','aurora'],L='arx-theme',LK='arx-theme-user-set';if(localStorage.getItem(LK)==='1'){var v=localStorage.getItem(L);if(v&&T.indexOf(v)>=0){document.documentElement.setAttribute('data-theme',v);return;}}var v2=localStorage.getItem(L);if(v2==='sky'||v2==='aurora'){if(T.indexOf(v2)>=0){document.documentElement.setAttribute('data-theme',v2);return;}}document.documentElement.setAttribute('data-theme','light');}catch(e){}})();
+    (function(){try{var T=['dark','light','sky','aurora'],L='arx-theme',LK='arx-theme-user-set',el=document.documentElement;if(localStorage.getItem(LK)==='1'){var v=localStorage.getItem(L);el.setAttribute('data-theme',v&&T.indexOf(v)>=0?v:'light');return;}var v2=localStorage.getItem(L);if((v2==='sky'||v2==='aurora')&&T.indexOf(v2)>=0){el.setAttribute('data-theme',v2);return;}var d=false;try{d=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;}catch(e1){}el.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();
     </script>
-    <link rel="stylesheet" href="<%=media%>/css/style.css?v=3.2">
+    <link rel="stylesheet" href="<%=media%>/css/style.css?v=3.3">
     <style>
         .arx-error-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; overflow: hidden; background: var(--page-background); }
         .arx-error-bg { position: absolute; inset: 0; z-index: 0; background: radial-gradient(ellipse at 22% 58%, rgba(239,68,68,0.12) 0%, transparent 50%), radial-gradient(ellipse at 78% 42%, rgba(45, 212, 191, 0.08) 0%, transparent 55%); }

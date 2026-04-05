@@ -339,13 +339,26 @@
     window.loadHistory = function() {
         fetch('<%=url("admin/arx-wificrack/history")%>?_='+Date.now())
             .then(function(r){return r.json();})
-            .then(function(d){ renderHistory(d.records||[]); });
+            .then(function(d){ renderHistory(d.records||[], d); });
     };
 
-    function renderHistory(records) {
+    function renderHistory(records, meta) {
         var el=document.getElementById('history-list');
+        el.innerHTML='';
+        if (meta && meta.truncated) {
+            var note=document.createElement('p');
+            note.className='arx-wc-empty';
+            note.style.cssText='padding:8px 0 4px;font-size:12px;opacity:0.85';
+            note.textContent='共 '+(meta.total||records.length)+' 条历史，仅显示最近 100 条；可删除旧记录后刷新。';
+            el.appendChild(note);
+        }
         if (!records.length) {
-            el.innerHTML='<p class="arx-wc-empty" style="padding:12px 0;">暂无历史记录</p>'; return;
+            var empty=document.createElement('p');
+            empty.className='arx-wc-empty';
+            empty.style.padding='12px 0';
+            empty.textContent='暂无历史记录';
+            el.appendChild(empty);
+            return;
         }
         // [S1] 用 DOM 方法构建，避免 ssid/bssid/name 拼入 innerHTML/onclick 导致 XSS
         var stack = document.createElement('div');
@@ -405,7 +418,6 @@
             row.appendChild(actDiv);
             stack.appendChild(row);
         });
-        el.innerHTML = '';
         el.appendChild(stack);
     }
 

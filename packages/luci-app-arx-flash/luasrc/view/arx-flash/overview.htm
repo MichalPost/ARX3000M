@@ -1,0 +1,161 @@
+<%#
+ ARX 固件与备份 — 与主题 recovery 区块风格一致
+-%>
+<%+header%>
+<%
+local http = require "luci.http"
+local disp = luci.dispatcher
+local nixio = require "nixio"
+local qs = http.getenv("QUERY_STRING") or ""
+local function qhas(k, v)
+	if not qs or qs == "" then return false end
+	local needle = k .. "=" .. (v or "")
+	return qs:find(needle, 1, true) ~= nil
+end
+local testlog = ""
+if qhas("test", "done") then
+	local lf = io.open("/tmp/arx-flash-last-test.log", "r")
+	if lf then testlog = lf:read("*a") or ""; lf:close() end
+end
+local staged = nixio.fs.access("/tmp/arx-flash-firmware.bin")
+local st = staged and nixio.fs.stat("/tmp/arx-flash-firmware.bin")
+local staged_sz = st and st.size or 0
+%>
+<div class="page-header page-hd ani animate-in">
+	<div class="page-title-row">
+		<h1><svg class="arx-icon arx-icon--title" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-hard-drive"/></svg> ARX 固件与备份</h1>
+		<span class="page-subtitle page-sub">配置备份、镜像校验与 sysupgrade 刷写（RAX3000M / ARX3000M）</span>
+	</div>
+</div>
+
+<div class="cbi-section animate-in">
+	<div class="arx-callout arx-callout--info" style="margin:0 0 12px 0">
+		<strong>与系统自带页的关系：</strong>本页面向本机型说明与一键流程；底层仍使用官方 <code>sysupgrade</code>。
+		建议同时保留
+		<a href="<%=disp.build_url('admin/system/flash')%>">系统 → 备份/升级</a>
+		或
+		<a href="<%=disp.build_url('admin/system/flashops')%>">Flash operations</a>
+		（若菜单中存在）以便对照。
+		<strong>配置还原</strong>请使用上述系统页上传备份包；勿使用非官方脚本随意解压到 <code>/</code>，以免半系统损坏。
+	</div>
+	<div class="arx-prose" style="margin:0">
+		<ul style="margin:0;padding-left:1.2em">
+			<li>日常升级请使用文件名含 <strong>sysupgrade</strong> 的 <strong>.itb</strong>（FIT）；不要用 <code>nand-ddr*</code> / <code>emmc-*</code> 的 Preloader/FIP 当普通在线升级包。</li>
+			<li>机身标签：<strong>无 EC</strong> 多为 NAND；<strong>含 EC</strong> 为 eMMC 算力版 — 变体不可混刷。</li>
+			<li>刷写过程中<strong>勿断电</strong>，Web 会断线数分钟属正常现象。</li>
+		</ul>
+	</div>
+</div>
+
+<% if qhas("upload", "ok") then %>
+<div class="arx-callout arx-callout--info animate-in">固件已上传到路由器 <code>/tmp</code>，可进行「仅校验」或「刷写」。</div>
+<% elseif qhas("upload", "fail") then %>
+<div class="arx-callout arx-callout--warn animate-in">上传失败：请确认选择了固件文件，且体积未超过上限（128MB）。</div>
+<% elseif qhas("upload", "small") then %>
+<div class="arx-callout arx-callout--warn animate-in">已拒绝：文件过小（&lt;1MB），疑似误选文件。</div>
+<% end %>
+<% if qhas("test", "nofile") then %>
+<div class="arx-callout arx-callout--warn animate-in">请先上传固件再进行校验。</div>
+<% end %>
+<% if qhas("flash", "noconfirm") then %>
+<div class="arx-callout arx-callout--warn animate-in">刷写已取消：请在确认框输入 <strong>确认刷写</strong> 四字。</div>
+<% elseif qhas("flash", "nofile") then %>
+<div class="arx-callout arx-callout--warn animate-in">未找到已上传镜像，请先上传。</div>
+<% end %>
+<% if qhas("bak", "fail") or qhas("bak", "err") then %>
+<div class="arx-callout arx-callout--warn animate-in">配置备份生成失败，请稍后重试或通过 SSH 执行 <code>sysupgrade -b /tmp/backup.tar.gz</code>。</div>
+<% end %>
+<% if qhas("cleared", "1") then %>
+<div class="arx-callout arx-callout--info animate-in">已清除本页暂存的固件文件。</div>
+<% end %>
+
+<div class="cbi-section animate-in">
+	<h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-file-text"/></svg> 配置备份</h2>
+	<p class="arx-prose">下载当前 UCI 与相关配置的归档（与 LuCI「生成备份」同类）。</p>
+	<a class="cbi-button cbi-button-save" href="<%=disp.build_url('admin/system/arx-flash/backup')%>">下载配置备份 (.tar.gz)</a>
+</div>
+
+<div class="cbi-section animate-in">
+	<h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-arrow-up"/></svg> 上传固件</h2>
+	<p class="arx-prose">镜像将写入 <code>/tmp/arx-flash-firmware.bin</code>（单次覆盖）。大文件上传时间可能较长，请勿刷新中断。</p>
+	<% if staged then %>
+	<p style="font-size:13px;opacity:0.9">当前已暂存：<strong><%=string.format("%.2f MB", staged_sz / 1048576)%></strong></p>
+	<% end %>
+	<form method="post" action="<%=disp.build_url('admin/system/arx-flash/receive')%>" enctype="multipart/form-data" style="margin-top:10px">
+		<input type="file" name="firmware" accept=".itb,.bin,.img,.trx" required class="cbi-input-file" />
+		<button type="submit" class="cbi-button cbi-button-apply" style="margin-top:10px">上传</button>
+	</form>
+	<form method="post" action="<%=disp.build_url('admin/system/arx-flash/clear')%>" style="margin-top:12px" onsubmit="return confirm('清除已上传的固件文件？');">
+		<button type="submit" class="cbi-button cbi-button-remove">清除暂存固件</button>
+	</form>
+</div>
+
+<div class="cbi-section animate-in">
+	<h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-check"/></svg> 仅校验（sysupgrade -T）</h2>
+	<p class="arx-prose">不写 Flash，仅检测镜像是否被当前系统接受（退出码与日志见下方）。</p>
+	<form method="post" action="<%=disp.build_url('admin/system/arx-flash/test')%>">
+		<button type="submit" class="cbi-button cbi-button-neutral" <% if not staged then %>disabled title="请先上传"<% end %>>运行校验</button>
+	</form>
+	<% if testlog ~= "" then %>
+	<h3 style="margin-top:16px;font-size:14px">最近一次校验输出</h3>
+	<pre class="arx-code-block" style="max-height:22em;overflow:auto;white-space:pre-wrap;word-break:break-word"><%=pcdata(testlog)%></pre>
+	<% end %>
+</div>
+
+<div class="cbi-section animate-in">
+	<h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-alert-triangle"/></svg> 刷写固件（sysupgrade）</h2>
+	<div class="arx-callout arx-callout--danger" style="margin:0 0 12px 0">
+		<strong>高风险操作。</strong>开始后设备将重启；务必确认镜像与硬件变体正确，供电稳定。
+	</div>
+	<form method="post" action="<%=disp.build_url('admin/system/arx-flash/flash')%>" style="max-width:42em" onsubmit="return confirm('确定开始刷写并重启？');">
+		<div class="cbi-value-field" style="margin-bottom:10px">
+			<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+				<input type="checkbox" name="keep" value="1" checked />
+				<span>保留现有配置（不勾选则相当于 <code>-n</code> 干净刷）</span>
+			</label>
+		</div>
+		<div class="cbi-value-field" style="margin-bottom:10px">
+			<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+				<input type="checkbox" name="verbose" value="1" />
+				<span>详细日志（<code>-v</code>）</span>
+			</label>
+		</div>
+		<div class="cbi-value-field" style="margin-bottom:10px">
+			<label for="arx-flash-confirm" style="display:block;margin-bottom:6px">确认文字（须完全一致）</label>
+			<input type="text" id="arx-flash-confirm" name="confirm_text" class="cbi-input-text" style="max-width:16em" placeholder="确认刷写" autocomplete="off" />
+		</div>
+		<button type="submit" class="cbi-button cbi-button-apply" <% if not staged then %>disabled<% end %>>开始刷写</button>
+	</form>
+</div>
+
+<div class="cbi-section animate-in">
+	<h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-activity"/></svg> 运行环境</h2>
+	<p style="font-size:13px;margin:0 0 8px 0;opacity:0.9"><code>/tmp</code> 可用空间（供参考）：<strong id="arx-flash-tmpfree">—</strong></p>
+	<pre id="arx-flash-board" class="arx-code-block" style="max-height:16em;overflow:auto;font-size:11px">加载中…</pre>
+</div>
+
+<div class="cbi-section animate-in">
+	<h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-globe"/></svg> 相关</h2>
+	<div class="arx-link-row">
+		<a href="<%=disp.build_url('admin/arx-dashboard/recovery')%>">仪表盘 · 恢复说明</a>
+		<a href="<%=disp.build_url('admin/arx-dashboard/overview')%>">返回仪表盘</a>
+	</div>
+</div>
+
+<script>
+(function(){
+	var u = '<%=disp.build_url("admin/system/arx-flash/status")%>';
+	fetch(u, { credentials: 'same-origin' }).then(function(r){ return r.json(); }).then(function(d){
+		var el = document.getElementById('arx-flash-board');
+		if (el) el.textContent = JSON.stringify(d, null, 2);
+		var tf = document.getElementById('arx-flash-tmpfree');
+		if (tf && d.tmp_free != null) {
+			tf.textContent = (d.tmp_free / 1048576).toFixed(1) + ' MB';
+		}
+	}).catch(function(){
+		var el = document.getElementById('arx-flash-board');
+		if (el) el.textContent = '无法加载状态（请确认已登录）。';
+	});
+})();
+</script>
+<%+footer%>

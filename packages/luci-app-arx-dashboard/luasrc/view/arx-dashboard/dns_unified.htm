@@ -1,0 +1,164 @@
+<%+header%>
+
+<div class="page-header page-hd ani animate-in">
+	<div class="page-title-row">
+		<h1><svg class="arx-icon" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-globe"/></svg> DNS / DoH / DoT 统一面板</h1>
+		<span class="page-subtitle page-sub">冲突检测、当前 dnsmasq 上游与「改一处」向导（仅改写主 <code>dhcp</code> dnsmasq 的 <code>server</code> 列表为<strong>单一</strong>上游）。复杂分流请用 SmartDNS / OpenClash / Passwall。</span>
+	</div>
+</div>
+
+<div class="cbi-section animate-in">
+	<div class="arx-action-row arx-action-row--flush" style="margin-bottom:12px">
+		<a href="<%=url('admin/arx-dashboard/dns_chain')%>" class="cbi-button cbi-button-link">DNS 解析链</a>
+		<a href="<%=url('admin/arx-dashboard/adguard_openclash')%>" class="cbi-button cbi-button-link">AdGuard + OpenClash</a>
+		<button type="button" class="cbi-button cbi-button-neutral" id="arx-dns-refresh">刷新</button>
+	</div>
+	<div id="arx-dns-loading" style="padding:20px;color:var(--text-muted);">加载中…</div>
+	<div id="arx-dns-main" style="display:none;">
+		<div class="arx-callout arx-callout--info" id="arx-dns-topology" style="margin-bottom:14px;font-size:13px;"></div>
+		<div id="arx-dns-conflicts"></div>
+		<h3 class="section-title">监听端口（TCP，启发式计数）</h3>
+		<table class="cbi-section-table" style="max-width:480px;margin-bottom:18px">
+			<thead><tr><th>端口</th><th>含义</th><th>LISTEN 条目数</th></tr></thead>
+			<tbody id="arx-dns-ports"></tbody>
+		</table>
+		<h3 class="section-title">服务状态</h3>
+		<table class="cbi-section-table" style="max-width:520px;margin-bottom:18px">
+			<tbody id="arx-dns-svc"></tbody>
+		</table>
+		<h3 class="section-title">dnsmasq（主段）</h3>
+		<pre class="arx-code-block" style="font-size:12px" id="arx-dns-dmasq"></pre>
+		<h3 class="section-title">resolv.conf.auto 摘要</h3>
+		<pre class="arx-code-block" style="font-size:12px" id="arx-dns-resolv"></pre>
+		<h3 class="section-title">分流与插件</h3>
+		<ul id="arx-dns-split" style="font-size:13px;line-height:1.6"></ul>
+		<p style="font-size:12px;color:var(--text-muted)" id="arx-dns-links"></p>
+
+		<h3 class="section-title">向导：统一主上游（dnsmasq）</h3>
+		<div class="arx-callout arx-callout--danger" style="margin-bottom:12px;font-size:12px">
+			将<strong>删除</strong>当前主 dnsmasq 段的全部 <code>list server</code>，再写入下面一条。若你依赖多上游轮询，请勿使用本向导。
+		</div>
+		<div class="cbi-value-field">
+			<label for="arx-dns-upstream">上游（IPv4 或 IPv4#端口）</label>
+			<input type="text" id="arx-dns-upstream" class="cbi-input-text" style="max-width:28em" placeholder="例如 127.0.0.1#5353 或 223.5.5.5" />
+		</div>
+		<div class="cbi-value-field" style="margin-top:10px">
+			<label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+				<input type="checkbox" id="arx-dns-noresolv" />
+				<span>同时设置 <code>noresolv='1'</code>（忽略 resolv.conf.auto，仅用上述上游）</span>
+			</label>
+		</div>
+		<button type="button" class="cbi-button cbi-button-apply" id="arx-dns-apply" style="margin-top:12px">应用并重启 dnsmasq</button>
+		<div id="arx-dns-apply-msg" style="margin-top:12px;font-size:13px;"></div>
+	</div>
+</div>
+
+<script>
+(function() {
+	var DATA_URL = '<%=url("admin/arx-dashboard/dns_unified_data")%>';
+	var APPLY_URL = '<%=url("admin/arx-dashboard/dns_wizard_apply")%>';
+	function esc(t) {
+		var d = document.createElement('div');
+		d.appendChild(document.createTextNode(t == null ? '' : String(t)));
+		return d.innerHTML;
+	}
+	var portNames = { '53': 'DNS', '5353': 'AdGuard 等', '6053': 'SmartDNS', '7874': 'OpenClash DNS', '853': 'DNS over TLS' };
+	function render(d) {
+		document.getElementById('arx-dns-loading').style.display = 'none';
+		document.getElementById('arx-dns-main').style.display = 'block';
+		document.getElementById('arx-dns-topology').textContent = d.topology_hint || '';
+		var cf = document.getElementById('arx-dns-conflicts');
+		cf.innerHTML = '';
+		(d.conflicts || []).forEach(function(c) {
+			var div = document.createElement('div');
+			div.className = 'arx-callout arx-callout--danger';
+			div.style.marginBottom = '8px';
+			div.style.fontSize = '12px';
+			div.textContent = c.text || '';
+			cf.appendChild(div);
+		});
+		var pt = document.getElementById('arx-dns-ports');
+		pt.innerHTML = '';
+		var pc = d.port_listen_tcp || {};
+		['53', '5353', '6053', '7874', '853'].forEach(function(p) {
+			var tr = document.createElement('tr');
+			tr.innerHTML = '<td><code>' + esc(p) + '</code></td><td>' + esc(portNames[p] || '') + '</td><td>' + esc(String(pc[p] != null ? pc[p] : '—')) + '</td>';
+			pt.appendChild(tr);
+		});
+		var sv = d.services || {};
+		var svcRows = [
+			['dnsmasq', 'dnsmasq'],
+			['smartdns', 'smartdns'],
+			['AdGuard Home', 'adguardhome'],
+			['OpenClash', 'openclash']
+		];
+		var tb = document.getElementById('arx-dns-svc');
+		tb.innerHTML = '';
+		svcRows.forEach(function(row) {
+			var on = sv[row[1]];
+			var tr = document.createElement('tr');
+			tr.innerHTML = '<th>' + esc(row[0]) + '</th><td>' + (on ? '<span class="badge badge-success">运行中</span>' : '<span class="badge">未运行</span>') + '</td>';
+			tb.appendChild(tr);
+		});
+		var ds = '段: ' + (d.dnsmasq_section || '—') + '\nport: ' + (d.dnsmasq_port || '53') + '\nnoresolv: ' + (d.dnsmasq_noresolv || '0') + '\nserver:\n';
+		(d.dnsmasq_servers || []).forEach(function(s) { ds += '  ' + s + '\n'; });
+		if (!(d.dnsmasq_servers || []).length) ds += '  （无）\n';
+		document.getElementById('arx-dns-dmasq').textContent = ds;
+		var rs = (d.resolv_auto_ns || []).map(function(n) { return 'nameserver ' + n; }).join('\n') || '（无或不可读）';
+		document.getElementById('arx-dns-resolv').textContent = rs;
+		var ul = document.getElementById('arx-dns-split');
+		ul.innerHTML = '';
+		(d.split_hints || []).forEach(function(h) {
+			var li = document.createElement('li');
+			li.textContent = h;
+			ul.appendChild(li);
+		});
+		var lk = d.links || {};
+		var parts = [];
+		if (lk.dnsmasq) parts.push('<a href="' + lk.dnsmasq + '">DHCP/DNS</a>');
+		if (lk.adguard) parts.push('<a href="' + lk.adguard + '">AdGuard Home</a>');
+		if (lk.smartdns) parts.push('<a href="' + lk.smartdns + '">SmartDNS</a>');
+		if (lk.openclash) parts.push('<a href="' + lk.openclash + '">OpenClash</a>');
+		if (lk.passwall) parts.push('<a href="' + lk.passwall + '">Passwall</a>');
+		document.getElementById('arx-dns-links').innerHTML = parts.length ? '快捷入口：' + parts.join(' · ') : '';
+	}
+	function load() {
+		document.getElementById('arx-dns-loading').style.display = 'block';
+		document.getElementById('arx-dns-main').style.display = 'none';
+		fetch(DATA_URL, { credentials: 'same-origin' })
+			.then(function(r) { return r.json(); })
+			.then(render)
+			.catch(function() {
+				document.getElementById('arx-dns-loading').textContent = '加载失败';
+			});
+	}
+	document.getElementById('arx-dns-refresh').onclick = function() { load(); };
+	document.getElementById('arx-dns-apply').onclick = function() {
+		var msg = document.getElementById('arx-dns-apply-msg');
+		msg.textContent = '提交中…';
+		msg.style.color = '';
+		var fd = new FormData();
+		fd.append('primary_upstream', document.getElementById('arx-dns-upstream').value.trim());
+		fd.append('set_noresolv', document.getElementById('arx-dns-noresolv').checked ? '1' : '0');
+		fetch(APPLY_URL, { method: 'POST', credentials: 'same-origin', body: fd })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				if (d.ok) {
+					msg.style.color = 'var(--success, #4ade80)';
+					msg.textContent = '已写入并重启 dnsmasq：' + (d.applied || '');
+					load();
+				} else {
+					msg.style.color = 'var(--danger, #f87171)';
+					msg.textContent = d.error || '失败';
+				}
+			})
+			.catch(function() {
+				msg.style.color = 'var(--danger, #f87171)';
+				msg.textContent = '请求失败';
+			});
+	};
+	load();
+})();
+</script>
+
+<%+footer%>

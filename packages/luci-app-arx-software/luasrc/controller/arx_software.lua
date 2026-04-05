@@ -5,6 +5,20 @@ local nixio = require "nixio"
 
 module("luci.controller.arx.software", package.seeall)
 
+-- 与 detect_preset / 镜像探测共用，避免 URL 分两处维护
+local PRESET_MIRRORS = {
+	{ id = "tuna",    url = "https://mirrors.tuna.tsinghua.edu.cn/openwrt/", needle = "mirrors.tuna.tsinghua.edu.cn/openwrt" },
+	{ id = "ustc",    url = "https://mirrors.ustc.edu.cn/openwrt/",         needle = "mirrors.ustc.edu.cn/openwrt" },
+	{ id = "official", url = "https://downloads.openwrt.org/",            needle = "downloads.openwrt.org" },
+}
+
+local function copy_config_file(src, dst)
+	local data = nixio.fs.readfile(src)
+	if data == nil then return false end
+	local ok = pcall(function() nixio.fs.writefile(dst, data) end)
+	return ok
+end
+
 function index()
 	if not nixio.fs.access("/etc/config/arx-software") then return end
 
@@ -18,6 +32,8 @@ function index()
 	entry({"admin", "system", "arx-software", "extroot_status"}, call("action_extroot_status")).leaf = true
 	entry({"admin", "system", "arx-software", "extroot_apply"}, call("action_extroot_apply")).leaf = true
 	entry({"admin", "system", "arx-software", "probe_mirrors"}, call("action_probe_mirrors")).leaf = true
+	entry({"admin", "system", "arx-software", "curated_meta"}, call("action_curated_meta")).leaf = true
+	entry({"admin", "system", "arx-software", "opkg_install_bundle"}, call("action_opkg_install_bundle")).leaf = true
 end
 
 local function read_release()
@@ -25,8 +41,11 @@ local function read_release()
 	local f = io.open("/etc/openwrt_release", "r")
 	if f then
 		for line in f:lines() do
-			local k, v = line:match("^([A-Z_]+)='([^']*)'")
-			if k and v then out[k] = v end
+			local k, v = line:match("^([A-Z_]+)=(.*)$")
+			if k and v then
+				v = v:match('^"(.*)"$') or v:match("^'(.*)'$") or v
+				out[k] = v
+			end
 		end
 		f:close()
 	end
@@ -35,9 +54,9 @@ end
 
 local function detect_preset(content)
 	if not content or content == "" then return "unknown" end
-	if content:find("mirrors.tuna.tsinghua.edu.cn/openwrt", 1, true) then return "tuna" end
-	if content:find("mirrors.ustc.edu.cn/openwrt", 1, true) then return "ustc" end
-	if content:find("downloads.openwrt.org", 1, true) then return "official" end
+	for _, m in ipairs(PRESET_MIRRORS) do
+		if content:find(m.needle, 1, true) then return m.id end
+	end
 	return "custom"
 end
 
@@ -102,7 +121,9 @@ function action_status()
 	local usb_mp = u:get("arx-software", "main", "usb_mountpoint") or ""
 
 	local lines = {}
+	local dist_line_count = 0
 	for line in dist:gmatch("[^\r\n]+") do
+		dist_line_count = dist_line_count + 1
 		if #lines < 10 then table.insert(lines, line) end
 	end
 
@@ -115,6 +136,7 @@ function action_status()
 		uci_usb_mountpoint = usb_mp,
 		release = read_release(),
 		distfeeds_preview = lines,
+		distfeeds_preview_truncated = dist_line_count > 10,
 		backup_exists = bak_exists and true or false,
 		usb_mount_candidates = usb_mount_candidates(),
 		overlay_device = odev,
@@ -163,7 +185,7 @@ end
 
 function action_apply()
 	http.prepare_content("application/json")
-	if http.getenv("REQUEST_METHOD") ~= "POST" then
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
 		http.write_json({ ok = false, error = "需要 POST" })
 		return
 	end
@@ -203,7 +225,7 @@ end
 
 function action_restore()
 	http.prepare_content("application/json")
-	if http.getenv("REQUEST_METHOD") ~= "POST" then
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
 		http.write_json({ ok = false, error = "需要 POST" })
 		return
 	end
@@ -217,7 +239,7 @@ end
 
 function action_opkg_update()
 	http.prepare_content("application/json")
-	if http.getenv("REQUEST_METHOD") ~= "POST" then
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
 		http.write_json({ ok = false, error = "需要 POST" })
 		return
 	end
@@ -240,7 +262,7 @@ end
 
 function action_usb_dest_apply()
 	http.prepare_content("application/json")
-	if http.getenv("REQUEST_METHOD") ~= "POST" then
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
 		http.write_json({ ok = false, error = "需要 POST" })
 		return
 	end
@@ -290,18 +312,167 @@ local function validate_pkg_name(p)
 	return p:match("^[%w%._%-]+$") ~= nil
 end
 
+local CURATED_JSON = "/usr/share/arx-software/curated.json"
+
+local function parse_pkg_list_from_form(s)
+	if not s or s == "" then return nil, "empty" end
+	local out = {}
+	local seen = {}
+	for token in tostring(s):gmatch("[^,%s]+") do
+		if not validate_pkg_name(token) then return nil, token end
+		if not seen[token] then
+			seen[token] = true
+			table.insert(out, token)
+		end
+	end
+	if #out == 0 then return nil, "empty" end
+	if #out > 40 then return nil, "too_many" end
+	return out
+end
+
+local function opkg_meta_for_package(pkg)
+	if not validate_pkg_name(pkg) then return nil end
+	local info = sys.exec("opkg info '" .. pkg .. "' 2>/dev/null") or ""
+	if not info:match("%S") then
+		return {
+			package = pkg,
+			available = false,
+			installed = false,
+			version = "",
+			depends = {},
+			installed_size = "",
+			installed_size_bytes = nil,
+		}
+	end
+	local ver = info:match("Version:%s*(%S+)") or ""
+	local dep_line = info:match("Depends:%s*(.-)\n") or ""
+	local deps = {}
+	for d in dep_line:gmatch("([^,]+)") do
+		local x = d:match("^%s*(.-)%s*$")
+		if x and x ~= "" then table.insert(deps, x) end
+	end
+	local sz_raw = info:match("Installed%-Size:%s*(%d+)")
+	local installed = info:match("Status:%s*install%s") ~= nil
+	return {
+		package = pkg,
+		available = true,
+		installed = installed,
+		version = ver,
+		depends = deps,
+		installed_size = sz_raw and (sz_raw .. " B") or "",
+		installed_size_bytes = tonumber(sz_raw),
+	}
+end
+
+function action_curated_meta()
+	http.prepare_content("application/json")
+	local jsonc = require "luci.jsonc"
+	local raw = nixio.fs.readfile(CURATED_JSON) or ""
+	local ok, catalog = pcall(jsonc.parse, raw)
+	if not ok or type(catalog) ~= "table" then
+		http.write_json({ ok = false, error = "curated 清单无效或缺失" })
+		return
+	end
+	local cache = {}
+	local function meta(p)
+		if not cache[p] then cache[p] = opkg_meta_for_package(p) end
+		return cache[p]
+	end
+	local categories = catalog.categories
+	if type(categories) ~= "table" then
+		http.write_json({ ok = true, disclaimer = catalog.disclaimer or "", categories = {} })
+		return
+	end
+	local out_cats = {}
+	for _, cat in ipairs(categories) do
+		if type(cat) == "table" and cat.id and cat.title then
+			local items_out = {}
+			for _, it in ipairs(type(cat.items) == "table" and cat.items or {}) do
+				if type(it) == "table" and it.id and it.title and type(it.packages) == "table" then
+					local pkgs_meta = {}
+					local sum_bytes = 0
+					for _, pname in ipairs(it.packages) do
+						if type(pname) == "string" then
+							local m = meta(pname)
+							if m then
+								table.insert(pkgs_meta, m)
+								if m.installed_size_bytes then sum_bytes = sum_bytes + m.installed_size_bytes end
+							end
+						end
+					end
+					table.insert(items_out, {
+						id = it.id,
+						title = it.title,
+						description = it.description or "",
+						feed_note = it.feed_note,
+						packages = it.packages,
+						packages_meta = pkgs_meta,
+						estimated_size_sum_bytes = sum_bytes > 0 and sum_bytes or nil,
+					})
+				end
+			end
+			table.insert(out_cats, {
+				id = cat.id,
+				title = cat.title,
+				items = items_out,
+			})
+		end
+	end
+	http.write_json({
+		ok = true,
+		disclaimer = catalog.disclaimer or "",
+		categories = out_cats,
+	})
+end
+
+function action_opkg_install_bundle()
+	http.prepare_content("application/json")
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
+		http.write_json({ ok = false, error = "需要 POST" })
+		return
+	end
+	local list, err = parse_pkg_list_from_form(http.formvalue("pkgs") or "")
+	if not list then
+		local msg = err == "too_many" and "一次最多 40 个包" or ("包名无效: " .. tostring(err))
+		http.write_json({ ok = false, error = msg })
+		return
+	end
+	local to_usb = http.formvalue("to_usb") == "1" or http.formvalue("to_usb") == "true"
+	if to_usb and not opkg_has_arxusb() then
+		http.write_json({ ok = false, error = "请先在下方保存 U 盘挂载点，以启用 opkg 目标 arxusb" })
+		return
+	end
+	local arg = table.concat(list, " ")
+	local cmd
+	if to_usb then
+		cmd = "opkg install -d arxusb " .. arg .. " >/tmp/arx-opkg-in.log 2>&1"
+	else
+		cmd = "opkg install " .. arg .. " >/tmp/arx-opkg-in.log 2>&1"
+	end
+	local rc = sys.call(cmd)
+	local out = ""
+	local logf = io.open("/tmp/arx-opkg-in.log", "r")
+	if logf then out = logf:read("*a") or ""; logf:close() end
+	local lines = {}
+	for line in out:gmatch("[^\r\n]+") do
+		table.insert(lines, line)
+	end
+	while #lines > 120 do table.remove(lines, 1) end
+	local logtxt = table.concat(lines, "\n")
+	http.write_json({
+		ok = rc == 0,
+		log = logtxt,
+		summary = (rc == 0 and "" or opkg_error_summary(logtxt)),
+	})
+end
+
 function action_probe_mirrors()
 	http.prepare_content("application/json")
-	local mirrors = {
-		{ id = "tuna", url = "https://mirrors.tuna.tsinghua.edu.cn/openwrt/" },
-		{ id = "ustc", url = "https://mirrors.ustc.edu.cn/openwrt/" },
-		{ id = "official", url = "https://downloads.openwrt.org/" },
-	}
 	local out = {}
-	for _, m in ipairs(mirrors) do
-		local ok = sys.call("uclient-fetch -q -O /dev/null '" .. m.url .. "' 2>/dev/null") == 0
+	for _, m in ipairs(PRESET_MIRRORS) do
+		local ok = sys.call("uclient-fetch -q -T 3 -O /dev/null '" .. m.url .. "' 2>/dev/null") == 0
 		if not ok then
-			ok = sys.call("wget -T 8 -q -O /dev/null '" .. m.url .. "' 2>/dev/null") == 0
+			ok = sys.call("wget -T 3 -q -O /dev/null '" .. m.url .. "' 2>/dev/null") == 0
 		end
 		table.insert(out, { id = m.id, ok = ok, url = m.url })
 	end
@@ -310,7 +481,7 @@ end
 
 function action_opkg_install()
 	http.prepare_content("application/json")
-	if http.getenv("REQUEST_METHOD") ~= "POST" then
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
 		http.write_json({ ok = false, error = "需要 POST" })
 		return
 	end
@@ -418,7 +589,7 @@ end
 
 function action_extroot_apply()
 	http.prepare_content("application/json")
-	if http.getenv("REQUEST_METHOD") ~= "POST" then
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
 		http.write_json({ ok = false, error = "需要 POST" })
 		return
 	end
@@ -432,13 +603,13 @@ function action_extroot_apply()
 		http.write_json({ ok = false, error = "设备无效（仅允许 /dev/sda1 这类 USB 分区）" })
 		return
 	end
-	if sys.call("test -b " .. dev) ~= 0 then
+	if sys.call("test -b '" .. dev .. "'") ~= 0 then
 		http.write_json({ ok = false, error = "块设备不存在或不可访问" })
 		return
 	end
 
 	if nixio.fs.access("/etc/config/fstab") then
-		sys.call("cp /etc/config/fstab /etc/config/fstab.arx.bak")
+		copy_config_file("/etc/config/fstab", "/etc/config/fstab.arx.bak")
 	end
 	-- [H3] 先备份再删除；失败时用 UCI 重新加载备份文件恢复，避免 commit 后缓存与文件不一致
 	delete_fstab_overlay_entries()
@@ -450,7 +621,7 @@ function action_extroot_apply()
 	if logf then logtxt = logf:read("*a") or ""; logf:close() end
 	if rc ~= 0 then
 		if nixio.fs.access("/etc/config/fstab.arx.bak") then
-			sys.call("cp /etc/config/fstab.arx.bak /etc/config/fstab")
+			copy_config_file("/etc/config/fstab.arx.bak", "/etc/config/fstab")
 		end
 		http.write_json({ ok = false, error = "执行失败，已尝试恢复 fstab 备份", log = logtxt })
 		return

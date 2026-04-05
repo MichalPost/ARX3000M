@@ -7,12 +7,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="format-detection" content="telephone=no">
+    <meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
     <title><%= pcdata(boardinfo.hostname or "ARX3000M") %> - <%= pcdata(page_title or luci.dispatcher.node_title()) %></title>
+    <link rel="icon" href="<%=media%>/favicon.svg" type="image/svg+xml">
     <script>
-    (function(){try{var T=['dark','light','sky','aurora'];var L='arx-theme',LK='arx-theme-user-set';if(localStorage.getItem(LK)==='1'){var v=localStorage.getItem(L);if(v&&T.indexOf(v)>=0){document.documentElement.setAttribute('data-theme',v);return;}}var v2=localStorage.getItem(L);if(v2==='sky'||v2==='aurora'){if(T.indexOf(v2)>=0){document.documentElement.setAttribute('data-theme',v2);return;}}document.documentElement.setAttribute('data-theme','light');}catch(e){}})();
+    (function(){try{var T=['dark','light','sky','aurora'],L='arx-theme',LK='arx-theme-user-set',el=document.documentElement;if(localStorage.getItem(LK)==='1'){var v=localStorage.getItem(L);el.setAttribute('data-theme',v&&T.indexOf(v)>=0?v:'light');return;}var v2=localStorage.getItem(L);if((v2==='sky'||v2==='aurora')&&T.indexOf(v2)>=0){el.setAttribute('data-theme',v2);return;}var d=false;try{d=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;}catch(e1){}el.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();
     (function(){try{var M=['expanded','narrow','hidden'],K='arx-sidebar-mode',v=localStorage.getItem(K);if(v&&M.indexOf(v)>=0){document.documentElement.setAttribute('data-arx-sidebar',v);}}catch(e){}})();
     </script>
-    <link rel="stylesheet" href="<%=media%>/css/style.css?v=3.2">
+    <link rel="stylesheet" href="<%=media%>/css/style.css?v=3.3">
     <% if css then for _, val in ipairs(css) do %>
     <link rel="stylesheet" href="<%=resource%>/<%=val%>">
     <% end end %>
@@ -28,6 +31,8 @@ end
 %>
 <body class="lang_<%=luci.i18n.language()%>" data-page="<%= pcdata(_arx_rps) %>"
       data-arx-realtime="<%=url('admin/arx-dashboard/realtime')%>">
+
+<a href="#maincontent" class="arx-skip-link">跳到主要内容</a>
 
 <div id="arx-page-skeleton" aria-hidden="true">
     <div class="arx-skeleton-page-inner">
@@ -107,7 +112,7 @@ end)
         <div class="sidebar">
             <div class="brand">
                 <div class="brand-row">
-                    <div class="brand-logo" aria-hidden="true"><svg class="arx-icon" width="20" height="20"><use href="#i-antenna"/></svg></div>
+                    <div class="brand-logo" aria-hidden="true"><img class="brand-logo-img" src="<%=media%>/favicon.svg" width="20" height="20" alt=""></div>
                     <div class="brand-text">
                         <h2 class="font-display">ARX3000M</h2>
                         <span class="subtitle"><%= pcdata(boardinfo.hostname or "OpenWrt") %></span>
@@ -144,7 +149,7 @@ end)
                 { icon_id = 'i-globe', label = '网络', dot = 'network',
                   prefixes = {'arx-network','arx-netmgr','arx-bridge','network','wireless','firewall','dhcp','diagnostics','mwan3','sqm','eqos'} },
                 { icon_id = 'i-sparkles', label = '服务', dot = 'services',
-                  prefixes = {'arx-software','arx-wizard','services','system','adguardhome','ddns','ttyd','uhttpd','nginx','cron'} },
+                  prefixes = {'arx-software','arx-flash','arx-wizard','services','system','adguardhome','ddns','ttyd','uhttpd','nginx','cron'} },
                 { icon_id = 'i-lock', label = 'VPN', dot = 'vpn',
                   prefixes = {'vpn','openvpn','wireguard','frp','passwall','clash','xray'} },
                 { icon_id = 'i-hard-drive', label = '存储', dot = 'nas',
@@ -230,7 +235,7 @@ end)
                         end
             %>
                 <li class="nav-item<% if item.active or anyActiveChild then %> active expanded<% end %>">
-                    <a href="<%=item.url%>" title="<%= pcdata(item.title) %>">
+                    <a href="<%=item.url%>" title="<%= pcdata(item.title) %>"<% if hasChildren then %> aria-haspopup="true" aria-expanded="<% if item.active or anyActiveChild then %>true<% else %>false<% end %>"<% end %>>
                         <span class="nav-icon" aria-hidden="true"><svg class="arx-icon arx-icon--nav"><use href="#<%=sec.icon_id%>"/></svg></span>
                         <span class="nav-label"><%=item.title%></span>
                     </a>
@@ -283,7 +288,7 @@ end)
     <div class="main-right">
         <div class="head" id="head">
             <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:0;">
-                <button type="button" class="showSide" id="arx-show-side" aria-label="打开菜单"><svg class="arx-icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
+                <button type="button" class="showSide" id="arx-show-side" aria-label="打开菜单" aria-expanded="false" aria-controls="sidebar"><svg class="arx-icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
                 <nav class="breadcrumb" aria-label="面包屑">
                 <%
                 local disp_b = luci.dispatcher
@@ -354,4 +359,4 @@ end)
             </div>
         </div>
 
-        <div class="main-inner main-content">
+        <div class="main-inner main-content" id="maincontent" tabindex="-1">

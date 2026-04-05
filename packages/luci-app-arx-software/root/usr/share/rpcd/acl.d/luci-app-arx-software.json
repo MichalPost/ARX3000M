@@ -9,7 +9,8 @@
 				"/etc/config/fstab": ["read"],
 				"/etc/config/fstab.arx.bak": ["read"],
 				"/proc/mounts": ["read"],
-				"/etc/openwrt_release": ["read"]
+				"/etc/openwrt_release": ["read"],
+				"/usr/share/arx-software/curated.json": ["read"]
 			}
 		},
 		"write": {}

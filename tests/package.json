@@ -1,0 +1,16 @@
+{
+  "name": "arx-theme-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "jest --testPathPattern='tests/(css|js)' --passWithNoTests",
+    "test:css": "jest --testPathPattern='tests/css' --passWithNoTests",
+    "test:js": "jest --testPathPattern='tests/js' --passWithNoTests"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "fast-check": "^3.15.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  }
+}

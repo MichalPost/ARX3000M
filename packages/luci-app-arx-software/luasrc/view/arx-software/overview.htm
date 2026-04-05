@@ -16,6 +16,21 @@
 	</p>
 </div>
 
+<div class="cbi-section animate-in" id="arx-curated-section">
+	<h3>推荐套件（精选列表）</h3>
+	<p style="margin:0 0 10px 0;opacity:0.9;font-size:13px;">
+		以下为维护方整理的常见组合；体积与依赖来自当前 <code>opkg</code> 索引（请先<strong>执行 opkg update</strong>）。合计大小为各包 <code>Installed-Size</code> 简单相加，共享依赖会重复计算，仅作参考。
+		<strong>内核模块必须与当前内核一致。</strong>
+	</p>
+	<div class="arx-callout arx-callout--info" style="margin:0 0 12px 0;font-size:12px" id="arx-curated-disclaimer"></div>
+	<button type="button" class="cbi-button cbi-button-neutral" id="arx-curated-toggle">展开推荐列表</button>
+	<button type="button" class="cbi-button cbi-button-save" id="arx-curated-refresh" style="display:none;margin-left:8px;">重新加载 opkg 信息</button>
+	<div id="arx-curated-body" style="display:none;margin-top:14px;">
+		<div id="arx-curated-loading" style="padding:16px;color:var(--text-muted);">点击「展开」后加载…</div>
+		<div id="arx-curated-content"></div>
+	</div>
+</div>
+
 <div class="cbi-section animate-in" id="arx-extroot-section">
 	<h3>一键 extroot（整盘 overlay 到 U 盘）</h3>
 	<p style="margin:0 0 12px 0;opacity:0.92;">
@@ -164,6 +179,15 @@ uci commit fstab
 (function() {
 	var base = '<%=url("admin/system/arx-software")%>';
 	function qs(s) { return document.querySelector(s); }
+	function esc(t) {
+		var d = document.createElement('div');
+		d.appendChild(document.createTextNode(t == null ? '' : String(t)));
+		return d.innerHTML;
+	}
+	function escAttr(t) {
+		if (t == null || t === '') return '';
+		return String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+	}
 	function setMsg(html, isErr) {
 		var el = qs('#arx-msg');
 		var cls = isErr ? 'arx-inline-status arx-inline-status--danger' : 'arx-inline-status arx-inline-status--success';
@@ -232,7 +256,9 @@ uci commit fstab
 					'  DISTRIB_ARCH=' + (rel.DISTRIB_ARCH || '—') +
 					'  · 检测到的源=' + (d.detected || '—') +
 					(d.backup_exists ? '  · 已有备份' : '  · 尚无备份');
-				qs('#arx-preview').textContent = (d.distfeeds_preview || []).join('\n') || '（空）';
+				var pv = (d.distfeeds_preview || []).join('\n') || '（空）';
+				if (d.distfeeds_preview_truncated) pv += '\n…（仅显示前 10 行，完整文件更长）';
+				qs('#arx-preview').textContent = pv;
 				var m = d.uci_mirror || 'tuna';
 				qs('#arx-mirror').value = (m === 'custom' || m === 'tuna' || m === 'ustc' || m === 'official') ? m : 'custom';
 				qs('#arx-custom').value = d.custom_base || '';
@@ -454,6 +480,98 @@ uci commit fstab
 				.catch(function() { probeOut.textContent = '检测失败（需 uclient-fetch 或 wget）'; });
 		};
 	}
+	var curatedBody = qs('#arx-curated-body');
+	var curatedToggle = qs('#arx-curated-toggle');
+	var curatedContent = qs('#arx-curated-content');
+	var curatedLoading = qs('#arx-curated-loading');
+	var curatedDisclaimer = qs('#arx-curated-disclaimer');
+	var curatedRefresh = qs('#arx-curated-refresh');
+	var curatedExpanded = false;
+	function fmtBytes(n) {
+		if (n == null || !n) return '—';
+		if (n < 1024) return n + ' B';
+		if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+		return (n / 1048576).toFixed(2) + ' MB';
+	}
+	function loadCurated() {
+		if (!curatedLoading || !curatedContent) return;
+		curatedLoading.style.display = 'block';
+		curatedContent.innerHTML = '';
+		fetch(base + '/curated_meta', { credentials: 'same-origin' })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				curatedLoading.style.display = 'none';
+				if (!d.ok) {
+					curatedContent.innerHTML = '<p style="color:var(--danger,#f87171)">' + esc(d.error || '加载失败') + '</p>';
+					return;
+				}
+				if (curatedDisclaimer) curatedDisclaimer.textContent = d.disclaimer || '';
+				var html = '';
+				(d.categories || []).forEach(function(cat) {
+					html += '<h4 style="margin:18px 0 8px 0">' + esc(cat.title) + '</h4>';
+					(cat.items || []).forEach(function(it) {
+						var pkgs = (it.packages || []).join(' ');
+						var sum = it.estimated_size_sum_bytes != null ? fmtBytes(it.estimated_size_sum_bytes) : '—';
+						var metaRows = (it.packages_meta || []).map(function(m) {
+							var st = m.installed ? '已装' : (m.available ? '可装' : '索引无');
+							var deps = (m.depends || []).slice(0, 10).join(', ');
+							if ((m.depends || []).length > 10) deps += '…';
+							return '<tr><td><code>' + esc(m.package) + '</code></td><td>' + esc(m.version || '—') + '</td><td>' + esc(st) + '</td><td style="font-size:11px;word-break:break-word">' + esc(deps || '—') + '</td></tr>';
+						}).join('');
+						html += '<div class="cbi-section" style="margin-bottom:12px;padding:12px;border-radius:8px">';
+						html += '<div style="font-weight:600;margin-bottom:6px">' + esc(it.title) + '</div>';
+						html += '<p style="margin:0 0 8px 0;font-size:12px;opacity:0.9">' + esc(it.description || '') + '</p>';
+						if (it.feed_note) html += '<p style="margin:0 0 8px 0;font-size:11px;color:var(--text-muted)">' + esc(it.feed_note) + '</p>';
+						html += '<p style="margin:0 0 8px 0;font-size:12px">参考合计体积（粗略）: <strong>' + esc(sum) + '</strong></p>';
+						html += '<table class="cbi-section-table" style="width:100%;font-size:12px;margin-bottom:10px"><thead><tr><th>包</th><th>版本</th><th>状态</th><th>依赖（节选）</th></tr></thead><tbody>' + metaRows + '</tbody></table>';
+						html += '<button type="button" class="cbi-button cbi-button-apply arx-curated-install" data-pkgs="' + escAttr(pkgs) + '">安装此组合</button>';
+						html += '</div>';
+					});
+				});
+				curatedContent.innerHTML = html;
+				var nodes = curatedContent.querySelectorAll('.arx-curated-install');
+				for (var ni = 0; ni < nodes.length; ni++) {
+					nodes[ni].onclick = function() {
+						var el = this;
+						var pkgs = el.getAttribute('data-pkgs');
+						if (!pkgs || !confirm('将执行 opkg install ' + pkgs + '，是否继续？')) return;
+						setMsg('正在安装组合包…', false);
+						showUsbLog('');
+						var fd = new FormData();
+						fd.append('pkgs', pkgs.replace(/\s+/g, ' '));
+						fd.append('to_usb', qs('#arx-pkg-usb').checked ? '1' : '0');
+						fetch(base + '/opkg_install_bundle', { method: 'POST', credentials: 'same-origin', body: fd })
+							.then(function(r) { return r.json(); })
+							.then(function(d) {
+								if (d.ok) setMsg('组合安装命令已执行完成。', false);
+								else setMsg((d.error || '失败') + (d.summary ? ' ' + d.summary : ''), true);
+								showUsbLog(d.log || '');
+							})
+							.catch(function() { setMsg('请求失败', true); });
+					};
+				}
+			})
+			.catch(function() {
+				curatedLoading.style.display = 'none';
+				curatedContent.innerHTML = '<p style="color:var(--danger,#f87171)">无法加载 curated 信息</p>';
+			});
+	}
+	if (curatedToggle && curatedBody) {
+		curatedToggle.onclick = function() {
+			curatedExpanded = !curatedExpanded;
+			curatedBody.style.display = curatedExpanded ? 'block' : 'none';
+			curatedToggle.textContent = curatedExpanded ? '收起推荐列表' : '展开推荐列表';
+			if (curatedRefresh) curatedRefresh.style.display = curatedExpanded ? 'inline-block' : 'none';
+			if (curatedExpanded && curatedContent && curatedContent.getAttribute('data-arx-curated-loaded') !== '1') {
+				curatedContent.setAttribute('data-arx-curated-loaded', '1');
+				loadCurated();
+			}
+		};
+	}
+	if (curatedRefresh) {
+		curatedRefresh.onclick = function() { loadCurated(); };
+	}
+
 	loadStatus();
 	loadExtroot();
 })();

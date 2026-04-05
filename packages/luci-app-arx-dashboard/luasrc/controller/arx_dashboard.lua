@@ -20,6 +20,7 @@ entry({"admin", "arx-dashboard", "services"}, call("action_services")).leaf = tr
 entry({"admin", "arx-dashboard", "service_action"}, call("action_service_action")).leaf = true
 entry({"admin", "arx-dashboard", "fw_status"}, call("action_fw_status")).leaf = true
 entry({"admin", "arx-dashboard", "logs"}, call("action_logs")).leaf = true
+entry({"admin", "arx-dashboard", "topn_traffic_data"}, call("action_topn_traffic_data")).leaf = true
 entry({"admin", "arx-dashboard", "network_health"}, call("action_network_health")).leaf = true
 entry({"admin", "arx-dashboard", "mwan_status"}, call("action_mwan_status")).leaf = true
 entry({"admin", "arx-dashboard", "ipv6_status"}, call("action_ipv6_status")).leaf = true
@@ -33,11 +34,10 @@ entry({"admin", "arx-dashboard", "adguard_openclash"}, template("arx-dashboard/a
 entry({"admin", "arx-dashboard", "adguard_oc_apply"}, call("action_adguard_oc_apply")).leaf = true
 end
 
--- AdGuard（非 53）作为 dnsmasq 上游、OpenClash DNS（默认 7874）作为 AdGuard 上游时的端口校验
+-- AdGuard（非 53）作为 dnsmasq 上游、OpenClash DNS（默认 7874）作为 AdGuard 上游时的端口校验（仅非特权端口）
 local function validate_adguard_upstream_port(p)
 	local n = tonumber(p)
-	if not n or n < 1 or n > 65535 then return nil end
-	if n == 53 then return nil end
+	if not n or n < 1024 or n > 65535 then return nil end
 	return n
 end
 
@@ -95,16 +95,21 @@ function action_adguard_oc_apply()
 	http.redirect(base .. "?applied=add")
 end
 
+-- 所有调用方传入的 name 均须满足白名单（含 action_network_health 字面量服务名），禁止拼接未校验字符串
 local function service_running_short(name)
 	if not name or not name:match("^[%w_%-]+$") then return false end
-	-- [S3] 使用 pgrep -x 精确匹配进程名，避免 pgrep -f 拼接单引号时潜在注入
-	local init_status = sys.exec("/etc/init.d/" .. name .. " status 2>&1 | grep running")
-	if init_status and init_status ~= "" then return true end
+	local init_out = sys.exec("/etc/init.d/" .. name .. " status 2>&1") or ""
+	local lo = init_out:lower()
+	if init_out:find("is running", 1, true) or init_out:find("is started", 1, true) then
+		return true
+	end
+	if init_out:find("running", 1, true) and not lo:find("not running", 1, true) and not lo:find("not started", 1, true) then
+		return true
+	end
 	local pgrep = sys.exec("pgrep -x " .. name .. " | head -1 2>/dev/null")
 	if pgrep and pgrep:match("%S") then return true end
-	-- 对于进程名与服务名不同的情况（如 openclash/passwall），回退到 pgrep -f
-	-- 用 grep -Fx 精确全词匹配，避免 passwall 误匹配 passwall2
-	local pgrep2 = sys.exec("pgrep -f '" .. name .. "' 2>/dev/null | head -1")
+	-- [H-4] 回退 pgrep -f 时用 -- 分隔符，且改用双引号拼接避免单引号注入风险
+	local pgrep2 = sys.exec('pgrep -f -- "' .. name .. '" 2>/dev/null | head -1')
 	return pgrep2 and pgrep2:match("%S") ~= nil
 end
 
@@ -140,11 +145,29 @@ local function read_os_release_val(key)
 		local k, v = line:match("^([A-Z_0-9]+)=(.+)$")
 		if k == key and v then
 			f:close()
-			return v:gsub('^"', ""):gsub('"$', "")
+			-- [M-6] 用锚定模式正确去除首尾引号，避免截断含内嵌引号的值
+			return v:match('^"(.*)"$') or v:match("^'(.*)'$") or v
 		end
 	end
 	f:close()
 	return nil
+end
+
+-- [L-5] 一次性读取 /etc/openwrt_release，解析所有字段，避免重复 fork cat+grep
+local function read_openwrt_release()
+	local vals = {}
+	local f = io.open("/etc/openwrt_release", "r")
+	if f then
+		for line in f:lines() do
+			local k, v = line:match("^([A-Z_]+)=(.*)$")
+			if k and v then
+				v = v:match('^"(.*)"$') or v:match("^'(.*)'$") or v
+				vals[k] = v
+			end
+		end
+		f:close()
+	end
+	return vals
 end
 
 local function compute_build_date()
@@ -155,8 +178,8 @@ local function compute_build_date()
 	local d = sys.exec("date -r /rom/etc/openwrt_release '+%Y-%m-%d %H:%M' 2>/dev/null") or ""
 	d = d:gsub("\n", ""):gsub("%s+$", "")
 	if d ~= "" then return d end
-	local rev = sys.exec("cat /etc/openwrt_release | grep DISTRIB_REVISION | cut -d'=' -f2 | tr -d '\"'") or ""
-	rev = rev:gsub("\n", ""):gsub("%s+$", "")
+	-- [L-5] 用 read_openwrt_release() 替代 cat|grep，避免重复 fork
+	local rev = (read_openwrt_release()["DISTRIB_REVISION"] or ""):gsub("%s+$", "")
 	if rev ~= "" then return rev end
 	return "—"
 end
@@ -172,6 +195,11 @@ local function overlay_stat_bytes()
 	return free, total
 end
 
+-- 网口名白名单：供 ip/iwinfo 等 shell 拼接前校验（须在 get_interface_stats / network_health 之前定义）
+local function arx_safe_ifname(ifn)
+	return type(ifn) == "string" and ifn:match("^[%w%.%-]+$") ~= nil
+end
+
 function action_realtime()
 http.prepare_content("application/json")
 local info = {}
@@ -181,11 +209,11 @@ info.uptime = sys.uptime()
 info.loadavg = sys.loadavg()
 local meminfo = sys.sysinfo()
 info.memory = {
-total = meminfo.total,
-free = meminfo.free,
+total = meminfo.total or 0,
+free = meminfo.free or 0,
 buffered = meminfo.buffers or 0,
 shared = meminfo.shared or 0,
-used = math.max(0, meminfo.total - meminfo.free - (meminfo.buffers or 0) - (meminfo.cached or 0)),
+used = math.max(0, (meminfo.total or 0) - (meminfo.free or 0) - (meminfo.buffers or 0) - (meminfo.cached or 0)),
 cached = meminfo.cached or 0
 }
 info.cpu = get_cpu_usage()
@@ -197,18 +225,19 @@ end
 function action_system_info()
 http.prepare_content("application/json")
 local u = uci.cursor()
-local rel_desc = sys.exec("cat /etc/openwrt_release | grep DISTRIB_DESCRIPTION | cut -d'=' -f2 | tr -d '\"'") or "OpenWrt"
-rel_desc = rel_desc:gsub("\n", ""):gsub("^%s+", ""):gsub("%s+$", "")
+-- [L-5] 一次性读取 /etc/openwrt_release，避免重复 fork cat+grep（原来 4 次）
+local rel = read_openwrt_release()
+local rel_desc = (rel["DISTRIB_DESCRIPTION"] or "OpenWrt"):gsub("\n", ""):gsub("^%s+", ""):gsub("%s+$", "")
 local ov_free, ov_total = overlay_stat_bytes()
 local boardinfo = {
 hostname = sys.hostname(),
-system = sys.exec("cat /tmp/sysinfo/board_name") or "unknown",
-model = sys.exec("cat /tmp/sysinfo/model") or "ARX3000M",
+system = (sys.exec("cat /tmp/sysinfo/board_name") or "unknown"):gsub("\n", ""):gsub("%s+$", ""),
+model = (sys.exec("cat /tmp/sysinfo/model") or "ARX3000M"):gsub("\n", ""):gsub("%s+$", ""),
 release = {
 description = rel_desc,
-revision = sys.exec("cat /etc/openwrt_release | grep DISTRIB_REVISION | cut -d'=' -f2 | tr -d '\"'") or "",
-target = sys.exec("cat /etc/openwrt_release | grep DISTRIB_TARGET | cut -d'=' -f2 | tr -d '\"'") or "",
-distribution = sys.exec("cat /etc/openwrt_release | grep DISTRIB_ID | cut -d'=' -f2 | tr -d '\"'") or "OpenWrt"
+revision = rel["DISTRIB_REVISION"] or "",
+target = rel["DISTRIB_TARGET"] or "",
+distribution = rel["DISTRIB_ID"] or "OpenWrt"
 },
 kernel = (sys.exec("uname -r") or "unknown"):gsub("\n", ""):gsub("%s+$", ""),
 firmware_version = u:get_first("system", "system", "version") or "custom",
@@ -218,8 +247,6 @@ overlay_free = ov_free,
 overlay_total = ov_total,
 localtime = os.date("%Y-%m-%d %H:%M:%S")
 }
-boardinfo.model = (boardinfo.model or ""):gsub("\n", ""):gsub("%s+$", "")
-boardinfo.system = (boardinfo.system or ""):gsub("\n", ""):gsub("%s+$", "")
 http.write_json(boardinfo)
 end
 
@@ -287,7 +314,8 @@ function action_disk_usage()
 			if stat then
 				seen[mount_point] = true
 				local blks  = tonumber(stat.blocks) or 0
-				local bsize = tonumber(stat.bsize)  or 0
+				local bsize = tonumber(stat.bsize) or 4096
+				if bsize == 0 then bsize = 4096 end
 				local bfree = tonumber(stat.bfree)  or 0
 				local total = blks * bsize
 				local free = bfree * bsize
@@ -295,10 +323,10 @@ function action_disk_usage()
 				local pct = total > 0 and math.floor(used * 100 / total + 0.5) or 0
 				local free_mb = math.floor(free / 1048576)
 				local level = "ok"
-				-- [LOW-6] 用 elseif 避免逻辑重叠，提升可读性
+				local soft_pct = warn_pct > 57 and (warn_pct - 7) or math.max(1, warn_pct - 1)
 				if pct >= warn_pct or free_mb <= warn_mb then
 					level = "danger"
-				elseif pct >= warn_pct - 7 or free_mb <= warn_mb * 2 then
+				elseif pct >= soft_pct or free_mb <= warn_mb * 2 then
 					level = "warn"
 				end
 				table.insert(disks, {
@@ -335,12 +363,17 @@ function get_cpu_usage()
 		if not f then return nil end
 		local line = f:read("*l"); f:close()
 		if not line then return nil end
-		local _, u, n, s, id, iow, irq, sirq =
-			line:match("(%w+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)%s+(%d+)")
-		if not u then return nil end
-		u,n,s,id,iow,irq,sirq = tonumber(u),tonumber(n),tonumber(s),tonumber(id),tonumber(iow),tonumber(irq),tonumber(sirq)
-		local total = u+n+s+id+iow+irq+sirq
-		return { user=u, nice=n, system=s, idle=id, total=total }
+		local rest = line:match("^cpu%s+(.+)$")
+		if not rest then return nil end
+		local nums = {}
+		for n in rest:gmatch("(%d+)") do
+			table.insert(nums, tonumber(n))
+		end
+		if #nums < 4 then return nil end
+		local u, n, s, id = nums[1], nums[2], nums[3], nums[4]
+		local total = 0
+		for _, v in ipairs(nums) do total = total + v end
+		return { user = u, nice = n, system = s, idle = id, total = total }
 	end
 	local cur = read_stat()
 	if not cur then return usage end
@@ -356,7 +389,12 @@ function get_cpu_usage()
 	end
 	-- 写入当前快照
 	local wf = io.open(CPU_PREV_FILE, "w")
-	if wf then wf:write(cur.user.." "..cur.idle.." "..cur.total.."\n"); wf:close() end
+	if wf then
+		wf:write(cur.user.." "..cur.idle.." "..cur.total.."\n")
+		wf:close()
+	else
+		usage.cpu_stat_warn = true
+	end
 	local dtotal = cur.total - prev_total
 	local didle  = cur.idle  - prev_idle
 	usage.user   = cur.user
@@ -433,7 +471,7 @@ stats_file:close()
 end
 for _, iface in ipairs(ifaces) do
 -- B-4: 仅排除 LAN 桥（通常为 br-lan），保留 br-wan 等以便 WAN 统计可见
-if iface ~= "lo" and iface ~= lan_bridge then
+if iface ~= "lo" and iface ~= lan_bridge and arx_safe_ifname(iface) then
 local s = dev_stats[iface] or {rx_bytes=0,rx_packets=0,tx_bytes=0,tx_packets=0}
 local ipv4 = sys.exec("ip -4 addr show " .. iface .. " scope global 2>/dev/null | grep inet | awk '{print $2}' | head -1") or ""
 local mac  = sys.exec("cat /sys/class/net/" .. iface .. "/address 2>/dev/null") or ""
@@ -510,6 +548,7 @@ if not allowed then
 http.write_json({ success = false, error = "服务未授权" })
 return
 end
+-- [M-2] 仅允许 DASHBOARD_SERVICES 白名单中的 init.d 名称（已在上面对 allowed 校验）
 if op == "stop" and svcname == "uhttpd" then
 http.write_json({ success = false, error = "禁止停止 Web 服务 (uhttpd)" })
 return
@@ -540,8 +579,7 @@ end
 function action_logs()
 http.prepare_content("application/json")
 local max_lines = tonumber(http.formvalue("lines")) or 30
--- [M2] 限制范围，防止 DoS
-if max_lines < 1 or max_lines > 1000 then max_lines = 30 end
+max_lines = math.min(math.max(max_lines, 1), 1000)
 
 local lines = {}
 -- [M1] 修正变量名拼写错误：原代码 logdata 未定义，应为 log_data
@@ -553,15 +591,225 @@ end
 end
 
 if #lines == 0 then
-local dmesg_out = sys.exec("dmesg | tail -" .. max_lines .. " 2>/dev/null") or ""
-if dmesg_out ~= "" then
-for line in dmesg_out:gmatch("[^\r\n]+") do
-table.insert(lines, line)
-end
-end
+	-- [M-7] 用 head -c 限制 dmesg 输出大小，避免大内核日志产生大量 pipe 数据
+	local dmesg_out = sys.exec("dmesg 2>/dev/null | tail -" .. max_lines .. " | head -c 65536") or ""
+	if dmesg_out ~= "" then
+	for line in dmesg_out:gmatch("[^\r\n]+") do
+	table.insert(lines, line)
+	end
+	end
 end
 
 http.write_json({ lines = lines })
+end
+
+-- 从 nlbw / luci.nlbw JSON 提取 MAC 聚合流量（多版本列名兼容）
+local function arx_topn_parse_mac_table(j)
+	local host_map = {}
+	if type(j) ~= "table" then return false, host_map end
+	local found = false
+	if type(j.columns) == "table" and type(j.data) == "table" then
+		local idx = {}
+		for i, name in ipairs(j.columns) do
+			idx[tostring(name):lower()] = i
+		end
+		local mac_i = idx.mac or idx.label or idx.host
+		local rx_i = idx.rx_bytes or idx.rx or idx.download or idx["in"]
+		local tx_i = idx.tx_bytes or idx.tx or idx.upload or idx["out"]
+		if mac_i then
+			for _, row in ipairs(j.data) do
+				if type(row) == "table" then
+					local id = row[mac_i]
+					local mac_std = type(id) == "string" and id:match("^(%x%x:%x%x:%x%x:%x%x:%x%x:%x%x)")
+					if mac_std then
+						local b = 0
+						if rx_i then b = b + (tonumber(row[rx_i]) or 0) end
+						if tx_i then b = b + (tonumber(row[tx_i]) or 0) end
+						if b == 0 then
+							for _, v in pairs(row) do
+								if type(v) == "number" then b = b + v end
+							end
+						end
+						if b > 0 then
+							id = mac_std:upper()
+							host_map[id] = (host_map[id] or 0) + b
+							found = true
+						end
+					end
+				end
+			end
+		end
+	end
+	if not found and j[1] and type(j[1]) == "table" then
+		for _, row in ipairs(j) do
+			if type(row) == "table" and type(row.mac) == "string" then
+				local mac_std = row.mac:match("^(%x%x:%x%x:%x%x:%x%x:%x%x:%x%x)")
+				local b = (tonumber(row.bytes) or 0) + (tonumber(row.rx_bytes) or tonumber(row.rx) or 0)
+					+ (tonumber(row.tx_bytes) or tonumber(row.tx) or 0)
+				if mac_std and b > 0 then
+					local id = mac_std:upper()
+					host_map[id] = (host_map[id] or 0) + b
+					found = true
+				end
+			end
+		end
+	end
+	return found, host_map
+end
+
+local function arx_topn_parse_layer7_table(j)
+	local dom_map = {}
+	if type(j) ~= "table" then return false, dom_map end
+	local found = false
+	if type(j.columns) == "table" and type(j.data) == "table" then
+		local idx = {}
+		for i, name in ipairs(j.columns) do
+			idx[tostring(name):lower()] = i
+		end
+		local id_i = idx.layer7 or idx.protocol or idx.app or idx.name or idx.label
+		local rx_i = idx.rx_bytes or idx.rx or idx.download
+		local tx_i = idx.tx_bytes or idx.tx or idx.upload
+		if id_i then
+			for _, row in ipairs(j.data) do
+				if type(row) == "table" then
+					local id = row[id_i]
+					if type(id) == "string" and id ~= "" then
+						local b = 0
+						if rx_i then b = b + (tonumber(row[rx_i]) or 0) end
+						if tx_i then b = b + (tonumber(row[tx_i]) or 0) end
+						if b == 0 then
+							for _, v in pairs(row) do
+								if type(v) == "number" then b = b + v end
+							end
+						end
+						if b > 0 then
+							dom_map[id] = (dom_map[id] or 0) + b
+							found = true
+						end
+					end
+				end
+			end
+		end
+	end
+	return found, dom_map
+end
+
+function action_topn_traffic_data()
+	http.prepare_content("application/json")
+	local u = uci.cursor()
+	local limit = dash_uci_num(u, "topn_limit", 10, 3, 50)
+	local jsonc = require "luci.jsonc"
+	local out = {
+		nlbwmon_ok = false,
+		nlbwmon_note = "",
+		hosts = {},
+		domains = {},
+		conntrack = {},
+		conntrack_note = ""
+	}
+	local nlbw_cmds = {
+		"nlbw -c ipv4 -g mac -o json 2>/dev/null",
+		"nlbw -g mac -o json 2>/dev/null",
+		"nlbw -c json -g mac 2>/dev/null",
+	}
+	local nlbw_raw = ""
+	for _, c in ipairs(nlbw_cmds) do
+		nlbw_raw = sys.exec(c) or ""
+		if nlbw_raw:match("%S") then break end
+	end
+	local host_map = {}
+	local okp, j = pcall(jsonc.parse, nlbw_raw)
+	if okp and nlbw_raw:match("%S") then
+		local found, hm = arx_topn_parse_mac_table(j)
+		if found then
+			host_map = hm
+			out.nlbwmon_ok = true
+		end
+	end
+	if not out.nlbwmon_ok then
+		local ubus_raw = sys.exec("ubus -S call luci.nlbw jsondump '{\"family\":4,\"group_by\":\"mac\"}' 2>/dev/null") or ""
+		if not ubus_raw:match("%S") then
+			ubus_raw = sys.exec("ubus -S call luci.nlbw jsondump '{\"family\":4}' 2>/dev/null") or ""
+		end
+		if ubus_raw:match("%S") then
+			local ok2, j2 = pcall(jsonc.parse, ubus_raw)
+			if ok2 then
+				local found2, hm2 = arx_topn_parse_mac_table(j2)
+				if found2 then
+					host_map = hm2
+					out.nlbwmon_ok = true
+				end
+			end
+		end
+	end
+	for id, bytes in pairs(host_map) do
+		table.insert(out.hosts, { id = id, total_bytes = bytes })
+	end
+	table.sort(out.hosts, function(a, b) return a.total_bytes > b.total_bytes end)
+	while #out.hosts > limit do table.remove(out.hosts) end
+
+	if out.nlbwmon_ok then
+		out.nlbwmon_note = "nlbwmon 周期统计；域名/layer7 见下列（若启用）"
+	else
+		out.nlbwmon_note = "未检测到 nlbw 或 luci.nlbw 可用数据（请安装 luci-app-nlbwmon 并等待统计周期）"
+	end
+
+	local dom_raw = sys.exec("nlbw -c ipv4 -g layer7 -o json 2>/dev/null") or ""
+	if not dom_raw:match("%S") then
+		dom_raw = sys.exec("nlbw -g layer7 -o json 2>/dev/null") or ""
+	end
+	local dom_map = {}
+	if dom_raw:match("%S") then
+		local ok3, j3 = pcall(jsonc.parse, dom_raw)
+		if ok3 then
+			local fd, dm = arx_topn_parse_layer7_table(j3)
+			if fd then dom_map = dm end
+		end
+	end
+	for id, bytes in pairs(dom_map) do
+		table.insert(out.domains, { id = id, total_bytes = bytes })
+	end
+	table.sort(out.domains, function(a, b) return a.total_bytes > b.total_bytes end)
+	while #out.domains > limit do table.remove(out.domains) end
+
+	local ct_counts = {}
+	-- 优先读 /proc/net/nf_conntrack 前 600 行，避免 conntrack -L 全表枚举拖垮 CPU
+	local ct_raw = ""
+	local nf = io.open("/proc/net/nf_conntrack", "r")
+	if nf then
+		local lines = {}
+		for _ = 1, 600 do
+			local line = nf:read("*l")
+			if not line then break end
+			lines[#lines + 1] = line
+		end
+		nf:close()
+		ct_raw = table.concat(lines, "\n")
+	end
+	if ct_raw == "" or not ct_raw:match("%S") then
+		ct_raw = sys.exec("timeout 4 sh -c 'conntrack -L 2>/dev/null | head -n 600'") or ""
+	end
+	for line in ct_raw:gmatch("[^\r\n]+") do
+		local dst = line:match("dst=(%d+%.%d+%.%d+%.%d+)")
+		if dst and not dst:match("^127%.") then
+			ct_counts[dst] = (ct_counts[dst] or 0) + 1
+		end
+	end
+	local ct_arr = {}
+	for dst, n in pairs(ct_counts) do
+		table.insert(ct_arr, { dst = dst, connections = n })
+	end
+	table.sort(ct_arr, function(a, b) return a.connections > b.connections end)
+	for i = 1, math.min(limit, #ct_arr) do
+		table.insert(out.conntrack, ct_arr[i])
+	end
+	if ct_raw:match("%S") then
+		out.conntrack_note = "短采样（最多约 600 条流），按目的 IPv4 聚合"
+	else
+		out.conntrack_note = "conntrack 无输出或未安装 conntrack-tools"
+	end
+
+	http.write_json(out)
 end
 
 function action_network_health()
@@ -586,16 +834,22 @@ function action_network_health()
 	local wan_dev = u:get("network", "wan", "ifname") or u:get("network", "wan", "device") or ""
 	local pppoe_iface = wan_proto == "pppoe" and "pppoe-wan" or nil
 	local candidates = { "wan" }
-	if wan_dev ~= "" then candidates[#candidates+1] = wan_dev end
-	if pppoe_iface then candidates[#candidates+1] = pppoe_iface end
+	for part in tostring(wan_dev or ""):gmatch("%S+") do
+		if arx_safe_ifname(part) then candidates[#candidates + 1] = part end
+	end
+	if pppoe_iface and arx_safe_ifname(pppoe_iface) then candidates[#candidates+1] = pppoe_iface end
+	local seen_c = {}
 	for _, cand in ipairs(candidates) do
-		if cand ~= "" then
-			local ip_out = sys.exec("ip -4 addr show dev " .. cand .. " scope global 2>/dev/null | grep inet | awk '{print $2}' | head -1") or ""
-			ip_out = ip_out:gsub("%s+$", "")
-			if ip_out ~= "" then
-				wan_up = true
-				wan_ip = ip_out
-				break
+		if cand ~= "" and not seen_c[cand] then
+			seen_c[cand] = true
+			if arx_safe_ifname(cand) then
+				local ip_out = sys.exec("ip -4 addr show dev " .. cand .. " scope global 2>/dev/null | grep inet | awk '{print $2}' | head -1") or ""
+				ip_out = ip_out:gsub("%s+$", "")
+				if ip_out ~= "" then
+					wan_up = true
+					wan_ip = ip_out
+					break
+				end
 			end
 		end
 	end
@@ -608,9 +862,12 @@ function action_network_health()
 			local n = 0
 			for line in f:lines() do
 				if line:match("^nameserver%s+") then
-					resolv_hint = resolv_hint .. line:gsub("^nameserver%s+", ""):match("^%S+") .. " "
-					n = n + 1
-					if n >= 3 then break end
+					local ns = line:gsub("^nameserver%s+", ""):match("^%S+")
+					if ns and ns ~= "" then
+						resolv_hint = resolv_hint .. ns .. " "
+						n = n + 1
+						if n >= 3 then break end
+					end
 				end
 			end
 			f:close()
@@ -672,13 +929,34 @@ function action_mwan_status()
 	out.last_event = le:gsub("^%S+%s+%S+%s+%S+%s+", ""):gsub("%s+$", "")
 	out.last_event_time = ""
 	out.all_up = true
+	local mwan_ifaces = {}
+	pcall(function()
+		u:foreach("mwan3", "interface", function(s)
+			mwan_ifaces[s[".name"]] = true
+		end)
+	end)
 	local raw = sys.exec("ubus call mwan3 status 2>/dev/null") or ""
 	if raw:match("%S") then
 		local jsonc = require "luci.jsonc"
 		local ok, j = pcall(jsonc.parse, raw)
 		if ok and j and type(j) == "table" then
-			for _, st in pairs(j) do
-				if type(st) == "table" and st.status == "offline" then out.all_up = false end
+			local iface_tbl = j.interfaces
+			if type(iface_tbl) ~= "table" then iface_tbl = j end
+			for name, st in pairs(iface_tbl) do
+				if type(st) ~= "table" then
+					-- skip non-interface keys
+				elseif not (st.status or st.online ~= nil) then
+					-- skip unrelated tables
+				elseif mwan_ifaces[name] then
+					local off = st.status == "offline"
+						or st.online == false
+						or st.online == 0
+						or st.online == "0"
+					if off then
+						out.all_up = false
+						break
+					end
+				end
 			end
 		end
 	end
@@ -698,13 +976,14 @@ function action_ipv6_status()
 		firewall6 = cell("na", "启发式")
 	}
 
-	local wan6_proto = u:get("network", "wan6", "proto")
-	if wan6_proto then
+	local wan6_cfg = u:get_all("network", "wan6")
+	if wan6_cfg then
 		local g6 = sys.exec("ip -6 addr show scope global 2>/dev/null | grep -m1 'inet6 '") or ""
 		if g6:match("%S") then
 			out.pd = cell("ok", "存在全局 IPv6 地址")
 		else
-			out.pd = cell("warn", "已配置 IPv6 接口但未见全局地址，检查上游或 PD")
+			local proto = wan6_cfg.proto or ""
+			out.pd = cell("warn", "已存在 wan6 段" .. (proto ~= "" and (" proto=" .. proto) or "") .. "，但未见全局地址，检查上游或 PD")
 		end
 	else
 		out.pd = cell("na", "未配置 wan6（可能为纯 IPv4）")
@@ -797,10 +1076,6 @@ end
 
 -- M-4: 辅助函数统一放在 action_wifi_env / action_wifi_rssi_data 之前，消除前向引用问题
 
-local function arx_safe_ifname(ifn)
-	return type(ifn) == "string" and ifn:match("^[%w%.%-]+$") ~= nil
-end
-
 local function arx_band_hint(channel, hw_mode)
 	local c = tonumber(channel)
 	if c then
@@ -825,6 +1100,8 @@ local function arx_parse_iwinfo_info(ifn)
 	local essid = info:match('ESSID:%s*"([^"]*)"')
 		or info:match("ESSID:%s*'([^']*)'")
 		or info:match("ESSID:%s*(%S+)")
+	-- [L-2] 过滤 iwinfo 对未关联接口输出的 "unknown" 占位符
+	if essid == "unknown" or essid == "Unknown" then essid = nil end
 	local hwmode = info:match("HW Mode:%s*(%S+)")
 	return {
 		signal_dbm = tonumber(sig),
@@ -843,7 +1120,7 @@ local function arx_list_ap_ifaces_wifi_env_style()
 	for line in iw:gmatch("[^\r\n]+") do
 		local ifn = line:match("^%s*Interface%s+(%S+)")
 		if ifn then
-			if cur_if and mode == "AP" then
+			if cur_if and (mode == "AP" or mode == "ap") then
 				table.insert(res, { ifname = cur_if, ssid = ssid or "", channel = ch, bandwidth = width or "", mode = mode })
 			end
 			cur_if, ssid, mode, ch, width = ifn, nil, nil, nil, nil
@@ -852,14 +1129,15 @@ local function arx_list_ap_ifaces_wifi_env_style()
 			local s = line:match("%s*ssid%s+(.+)$")
 			if s then ssid = s:gsub("^%s+", ""):gsub("%s+$", "") end
 			local t = line:match("%s*type%s+(%S+)")
-			if t then mode = t end
+			-- [H-6] iw dev 的 type 字段在不同驱动下可能是 "AP" 或 "ap"，统一转大写比较
+			if t then mode = t:upper() end
 			local c = line:match("channel%s+(%d+)")
 			if c then ch = c end
 			local w = line:match("width%s+(%d+)%s+MHz")
 			if w then width = w .. " MHz" end
 		end
 	end
-	if cur_if and mode == "AP" then
+	if cur_if and (mode == "AP" or mode == "ap") then
 		table.insert(res, { ifname = cur_if, ssid = ssid or "", channel = ch, bandwidth = width or "", mode = mode })
 	end
 	if #res == 0 and nixio.fs.access("/usr/bin/iwinfo") then

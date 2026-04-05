@@ -74,6 +74,24 @@ local function validate_name(name)
 	return name:match("^[%w%-_]+$") ~= nil
 end
 
+-- [C-1/C-2] SSID 白名单，避免 shell/文件路径展开风险（仅字母数字、空格、连字符、下划线）
+local function sanitize_ssid(s, max_len)
+	max_len = max_len or 32
+	local t = (s or ""):gsub("[^%w%-_ ]", "_"):sub(1, max_len)
+	if t == "" then return "unknown" end
+	return t
+end
+
+-- RFC 5987 attachment filename + filename*（ASCII 文件名逐字节百分号编码）
+local function http_content_disposition_attachment(filename_ascii)
+	local enc = {}
+	for i = 1, #filename_ascii do
+		enc[#enc + 1] = string.format("%%%02X", filename_ascii:byte(i))
+	end
+	http.header("Content-Disposition",
+		'attachment; filename="' .. filename_ascii .. '"; filename*=UTF-8\'\'' .. table.concat(enc))
+end
+
 -- ==================== 工具函数 ====================
 
 local function detect_tools()
@@ -106,6 +124,29 @@ local function get_wifi_iface()
 	return iface
 end
 
+-- airodump：从 iw 输出中选与当前 STA 口对应的 monitor 口（避免多无线时误用第一个 mon*）
+local function pick_mon_iface(iw_text, sta_iface)
+	if not sta_iface or sta_iface == "" then sta_iface = "wlan0" end
+	local candidates = {}
+	for ifn in (iw_text or ""):gmatch("Interface%s+(%S+)") do
+		if ifn:match("mon$") and ifn:match("^[%w%.%-_]+$") then
+			table.insert(candidates, ifn)
+		end
+	end
+	local want = sta_iface .. "mon"
+	for _, c in ipairs(candidates) do
+		if c == want then return c end
+	end
+	for _, c in ipairs(candidates) do
+		if #c >= #sta_iface and c:sub(1, #sta_iface) == sta_iface then
+			return c
+		end
+	end
+	if #candidates == 1 then return candidates[1] end
+	if #candidates > 0 then return candidates[1] end
+	return want
+end
+
 local function is_running()
 	if not nixio.fs.access(PID_FILE) then return false end
 	local f = io.open(PID_FILE,"r"); if not f then return false end
@@ -122,7 +163,7 @@ local function read_info()
 	if f then
 		for line in f:lines() do
 			local k,v = line:match("^(%w+)=(.*)$")
-			if k then t[k]=v end
+			if k then t[k] = (v or ""):sub(1, 256) end
 		end
 		f:close()
 	end
@@ -191,30 +232,41 @@ function action_tools()
 	http.write_json({tools=detect_tools(), current=get_current_tool()})
 end
 
--- [HIGH-2] 扫描锁文件，防止并发扫描同时执行
-local SCAN_LOCK = CAPTURE_DIR .. "/scan.lock"
+-- [H-1] 原子互斥：mkdir 单目录锁，覆盖「检查 is_running → 写 PID」与扫描的 TOCTOU
+local OP_LOCK_DIR = CAPTURE_DIR .. "/.op_lock"
+
+local function op_lock_acquire()
+	if sys.call("mkdir '" .. OP_LOCK_DIR:gsub("'", "'\\''") .. "' 2>/dev/null") == 0 then
+		return true
+	end
+	local st = nixio.fs.stat(OP_LOCK_DIR)
+	local mt = st and (tonumber(st.mtime) or tonumber(st.modification)) or 0
+	if mt > 0 and (os.time() - mt) > 120 then
+		sys.call("rmdir '" .. OP_LOCK_DIR:gsub("'", "'\\''") .. "' 2>/dev/null")
+		return sys.call("mkdir '" .. OP_LOCK_DIR:gsub("'", "'\\''") .. "' 2>/dev/null") == 0
+	end
+	return false
+end
+
+local function op_lock_release()
+	sys.call("rmdir '" .. OP_LOCK_DIR:gsub("'", "'\\''") .. "' 2>/dev/null")
+end
 
 function action_scan()
 	http.prepare_content("application/json")
 	if et_is_running() then http.write_json({error="Evil Twin 运行中，请先停止后再扫描"}); return end
 	if is_running() then http.write_json({error="正在抓包中，请先停止后再扫描"}); return end
-	-- 防止并发扫描：检查锁文件（mtime 超过 30 秒视为过期）
-	if nixio.fs.access(SCAN_LOCK) then
-		local st = nixio.fs.stat(SCAN_LOCK)
-		local age = st and (os.time() - (st.mtime or 0)) or 999
-		if age < 30 then
-			http.write_json({error="扫描进行中，请稍候"}); return
-		end
+	if not op_lock_acquire() then
+		http.write_json({error="扫描或抓包初始化进行中，请稍候"})
+		return
 	end
 	os.execute("mkdir -p "..CAPTURE_DIR)
-	-- L-5: 锁文件过期判断依赖 mtime，内容无需写入时间戳
-	local lf = io.open(SCAN_LOCK, "w"); if lf then lf:close() end
 
 	local networks = {}
 	local iface = ""
 	local ok, scan_err = pcall(function()
 		iface = get_wifi_iface()
-		local scan_raw = sys.exec(string.format("iw dev %s scan 2>/dev/null", iface))
+		local scan_raw = sys.exec(string.format("iw dev %s scan 2>/dev/null", iface)) or ""
 		local cur = {}
 		for line in scan_raw:gmatch("[^\n]+") do
 			local bss = line:match("^BSS ([%x:]+)")
@@ -227,8 +279,7 @@ function action_scan()
 				cur = {bssid=bss, ssid="", signal=0, channel=0, security="OPEN"}
 			elseif cur.bssid then
 				local ssid = line:match("^%s+SSID: (.+)")
-				-- [M7] 对 SSID 做基本清理，移除控制字符
-				if ssid then cur.ssid = ssid:gsub("[%c]", "") end
+				if ssid then cur.ssid = sanitize_ssid(ssid, 64) end
 				local sig  = line:match("^%s+signal: ([%-%.%d]+)"); if sig then cur.signal=tonumber(sig) or 0 end
 				local ch   = line:match("DS Parameter set: channel (%d+)"); if ch then cur.channel=tonumber(ch) or 0 end
 				if line:match("RSN:") then cur.security="WPA2" end
@@ -243,7 +294,7 @@ function action_scan()
 		table.sort(networks, function(a,b) return a.signal > b.signal end)
 	end)
 
-	nixio.fs.remove(SCAN_LOCK)
+	op_lock_release()
 	if not ok then
 		http.write_json({error="扫描失败: "..tostring(scan_err)})
 		return
@@ -258,8 +309,7 @@ function action_start()
 
 	local bssid   = http.formvalue("bssid") or ""
 	local channel = http.formvalue("channel") or "0"
-	local ssid    = (http.formvalue("ssid") or "unknown"):gsub("[%c]", ""):sub(1, 32)
-	if ssid == "" then ssid = "unknown" end
+	local ssid    = sanitize_ssid(http.formvalue("ssid") or "unknown")
 	local tool    = http.formvalue("tool") or get_current_tool()
 	local timeout = tonumber(http.formvalue("timeout")) or 300
 
@@ -279,6 +329,11 @@ function action_start()
 	-- 超时范围限制
 	if timeout < 0 then timeout = 0 end
 	if timeout > 3600 then timeout = 3600 end
+
+	if not op_lock_acquire() then
+		http.write_json({error="扫描或抓包初始化进行中，请稍候"})
+		return
+	end
 
 	os.execute("rm -f "..PCAP_FILE.." "..HASH_FILE.." "..LOG_FILE.." "..HASH_FILE..".converted")
 	os.execute("mkdir -p "..CAPTURE_DIR)
@@ -312,12 +367,8 @@ function action_start()
 
 	elseif tool=="airodump" then
 		os.execute(string.format("airmon-ng start %s 2>/dev/null", iface))
-		-- [HIGH-5] 遍历所有接口找真实 monitor 接口名，与 action_stop 逻辑保持一致
-		local mon = iface.."mon"
 		local iw_check = sys.exec("iw dev 2>/dev/null") or ""
-		for ifn in iw_check:gmatch("Interface%s+(%S+)") do
-			if ifn:match("mon$") and ifn:match("^[%w]+$") then mon = ifn; break end
-		end
+		local mon = pick_mon_iface(iw_check, iface)
 		local ch_num = tonumber(channel) or 0
 		local ch_arg = ch_num > 0 and ("-c "..tostring(ch_num)) or ""
 		if ch_num > 0 then
@@ -334,7 +385,11 @@ function action_start()
 			iface, PCAP_FILE, LOG_FILE, PID_FILE)
 	end
 
-	if cmd=="" then http.write_json({error="工具不可用: "..tool}); return end
+	if cmd=="" then
+		op_lock_release()
+		http.write_json({error="工具不可用: "..tool})
+		return
+	end
 	os.execute(cmd)
 
 	-- 写入目标信息
@@ -381,6 +436,7 @@ function action_start()
 	end
 
 	local desc = {hcxdumptool="hcxdumptool（自动 PMKID+deauth）", airodump="airodump-ng（经典抓包）", tcpdump="tcpdump（被动监听）"}
+	op_lock_release()
 	http.write_json({ok=true, message="开始抓包: "..ssid.."，使用 "..(desc[tool] or tool), iface=iface})
 end
 
@@ -400,27 +456,29 @@ function action_stop()
 	-- airodump：停 monitor mode，找输出文件
 	if info.tool=="airodump" then
 		local iface = get_wifi_iface()
-		-- [H2] 先探测真实 monitor 接口名，再 stop，避免接口名不是 wlan0mon 时失败
-		local mon_iface = nil
 		local iw_devs = sys.exec("iw dev 2>/dev/null") or ""
-		for ifn in iw_devs:gmatch("Interface%s+(%S+)") do
-			if ifn:match("mon$") then mon_iface = ifn; break end
-		end
-		if mon_iface and mon_iface:match("^[%w]+$") then
+		local mon_iface = pick_mon_iface(iw_devs, iface)
+		if mon_iface and mon_iface:match("^[%w%.%-_]+$") then
 			os.execute(string.format("airmon-ng stop %s 2>/dev/null", mon_iface))
 		else
 			os.execute(string.format("airmon-ng stop %smon 2>/dev/null", iface))
 		end
-		-- [MED-5] 用 nixio.fs.stat 的 mtime 字段（POSIX 标准），不再猜测备用字段名
-		local cap_file = nil
+		os.execute("sleep 1")
 		local best_mtime = 0
+		local cap_file = nil
+		local stat_warned = false
 		local dir = nixio.fs.dir(CAPTURE_DIR)
 		if dir then
 			for entry in dir do
 				if entry:match("^airodump%-.*%.cap$") or entry:match("^airodump%-.*%.pcapng$") then
 					local path = CAPTURE_DIR.."/"..entry
 					local st = nixio.fs.stat(path)
-					local mt = (st and tonumber(st.mtime)) or 0
+					-- [H-3] 优先 mtime，再回退 modification
+					local mt = (st and (tonumber(st.mtime) or tonumber(st.modification))) or 0
+					if st and not st.mtime and not st.modification and not stat_warned then
+						stat_warned = true
+						os.execute("logger -t arx-wificrack 'stat missing mtime/modification for cap pick'")
+					end
 					if mt > best_mtime then
 						best_mtime = mt
 						cap_file = path
@@ -704,8 +762,8 @@ function action_history()
 					mf:close()
 				end
 				info.time = tonumber(info.time) or 0
-				-- 全文件统计 PMKID/EAPOL；极长文件设硬上限，避免单次请求耗时过长
-				local MAX_HASH_LINES = 200000
+				-- [M-2] 降低行数上限，避免单次请求在嵌入式路由器上耗时过长
+			local MAX_HASH_LINES = 50000
 				info.hash_stats_truncated = false
 				local hf = io.open(path,"r")
 				if hf then
@@ -726,7 +784,14 @@ function action_history()
 		end
 	end
 	table.sort(records, function(a,b) return (tonumber(a.time) or 0) > (tonumber(b.time) or 0) end)
-	http.write_json({records=records})
+	local total = #records
+	local MAX_HISTORY = 100
+	local truncated = total > MAX_HISTORY
+	if truncated then
+		-- 列表已按时间降序，删除末尾即丢弃最旧记录
+		while #records > MAX_HISTORY do table.remove(records, #records) end
+	end
+	http.write_json({ records = records, total = total, truncated = truncated })
 end
 
 -- 下载历史文件
@@ -736,7 +801,7 @@ function action_history_dl()
 	if not validate_name(name) then http.status(400,"Bad Request"); return end
 	local path = HISTORY_DIR.."/"..name..".22000"
 	if not nixio.fs.access(path) then http.status(404,"Not Found"); return end
-	http.header("Content-Disposition", 'attachment; filename="'..name..'.22000"')
+	http_content_disposition_attachment(name .. ".22000")
 	http.prepare_content("application/octet-stream")
 	local f = io.open(path,"rb"); if f then http.write(f:read("*a")); f:close() end
 end
@@ -758,7 +823,7 @@ function action_download()
 	if not nixio.fs.access(HASH_FILE) then http.status(404,"Not Found"); http.write("文件不存在"); return end
 	local info = read_info()
 	local ssid = (info.ssid or "capture"):gsub("[^%w%-_]","_")
-	http.header("Content-Disposition", 'attachment; filename="'..ssid..'_hash.22000"')
+	http_content_disposition_attachment(ssid .. "_hash.22000")
 	http.prepare_content("application/octet-stream")
 	local f = io.open(HASH_FILE,"rb"); if f then http.write(f:read("*a")); f:close() end
 end
@@ -886,9 +951,15 @@ function action_et_start()
 	channel = tostring(math.floor(tonumber(channel)))
 
 	if #ssid > 32 then http.write_json({error="SSID 过长"}); return end
+	ssid = sanitize_ssid(ssid)
 
 	local iface = get_wifi_iface()
-	local ap_iface = iface .. "ap"
+	-- [M-5] ap_iface 仅用于传给 shell 脚本，确保只含字母数字（去掉点等特殊字符）
+	local ap_iface = iface:gsub("[^%w]", "") .. "ap"
+	if #ap_iface < 3 or ap_iface == "ap" then
+		http.write_json({error="无法从无线接口名生成合法 AP 接口名，请检查无线配置"})
+		return
+	end
 
 	os.execute("mkdir -p " .. ET_DIR)
 	os.execute("rm -f " .. ET_CREDS .. " " .. ET_LOG)
@@ -908,9 +979,13 @@ function action_et_start()
 	local sf = io.open(ssid_file, "w")
 	if sf then sf:write(ssid); sf:close() end
 
-	os.execute(string.format(
-		"sh /usr/bin/arx-et.sh start \"$(cat %s)\" %s %s %s %s >> %s 2>&1 &",
-		ssid_file, bssid, channel, iface, ap_iface, ET_LOG))
+	-- [C-1/C-2] 不再用 $(cat file) 展开 SSID 到 shell 命令行，改为通过环境变量传递，
+	-- 彻底消除 SSID 中 $、`、\ 等 shell 元字符导致的命令注入风险
+	-- arx-et.sh 内部通过 $ARX_ET_SSID 读取目标 SSID
+	local env_cmd = string.format(
+		"ARX_ET_SSID=$(cat '%s') sh /usr/bin/arx-et.sh start_env %s %s %s %s >> %s 2>&1 &",
+		ssid_file, bssid, channel, iface, ap_iface, ET_LOG)
+	os.execute(env_cmd)
 
 	local msg = "Evil Twin 启动中，目标: " .. ssid
 	if use_cap and nixio.fs.access(ET_HANDSHAKE) then

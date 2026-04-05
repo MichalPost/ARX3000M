@@ -20,6 +20,7 @@ local ph = numopt("poll_hero_devices_sec", 45, 15, 3600)
 local vp = dashopt("visibility_pause", "1") == "1"
 local hm = numopt("hidden_poll_multiplier", 3, 1, 10)
 local dheavy = numopt("defer_heavy_ms", 1500, 0, 60000)
+local ptn = numopt("poll_topn_sec", 60, 30, 3600)
 local nixio = require "nixio"
 local has_wificrack = nixio.fs.access("/usr/lib/lua/luci/controller/arx_wificrack.lua")
 css = { "arx-dashboard/css/dashboard.css" }
@@ -34,7 +35,8 @@ window.ARX_DASH_CFG = {
 	pollHeroDevices: <%= ph %>,
 	visibilityPause: <%= vp and "true" or "false" %>,
 	hiddenMult: <%= hm %>,
-	deferHeavyMs: <%= dheavy %>
+	deferHeavyMs: <%= dheavy %>,
+	pollTopn: <%= ptn %>
 };
 window.ARX_DASH_URLS = {
 	devices_json: "<%=url('admin/arx-netmgr/devices_json')%>",
@@ -51,7 +53,8 @@ window.ARX_DASH_URLS = {
 	ipv6_status: "<%=url('admin/arx-dashboard/ipv6_status')%>",
 	mesh_status: "<%=url('admin/arx-dashboard/mesh_status')%>",
 	wifi_env: "<%=url('admin/arx-dashboard/wifi_env')%>",
-	service_action: "<%=url('admin/arx-dashboard/service_action')%>"
+	service_action: "<%=url('admin/arx-dashboard/service_action')%>",
+	topn_traffic_data: "<%=url('admin/arx-dashboard/topn_traffic_data')%>"
 };
 </script>
 <div class="page-header page-hd ani animate-in">
@@ -199,11 +202,47 @@ window.ARX_DASH_URLS = {
     <a href="<%=url('admin/arx-dashboard/dns_chain')%>" class="quick-action-btn">
         <div class="qa-icon qa-icon--accent"><svg class="arx-icon" aria-hidden="true"><use href="#i-globe"/></svg></div><span class="qa-label">DNS 解析链</span>
     </a>
+    <a href="<%=url('admin/arx-dashboard/dns_unified')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-globe"/></svg></div><span class="qa-label">DNS 统一</span>
+    </a>
+    <a href="<%=url('admin/arx-dashboard/roaming')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--accent"><svg class="arx-icon" aria-hidden="true"><use href="#i-wifi"/></svg></div><span class="qa-label">漫游</span>
+    </a>
+    <a href="<%=url('admin/arx-dashboard/sqm_wizard')%>" class="quick-action-btn">
+        <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-activity"/></svg></div><span class="qa-label">SQM 向导</span>
+    </a>
     <a href="<%=url('admin/arx-dashboard/adguard_openclash')%>" class="quick-action-btn">
         <div class="qa-icon qa-icon--neutral"><svg class="arx-icon" aria-hidden="true"><use href="#i-shield-check"/></svg></div><span class="qa-label">AdGuard+OC</span>
     </a>
 </div>
 <button type="button" class="quick-actions-expand" id="quick-actions-expand" aria-expanded="false" aria-controls="quick-actions-main">更多快捷方式</button>
+</div>
+
+<div class="dash-topn-wrap animate-in" id="dash-topn-wrap" style="margin:16px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
+    <div class="status-card" style="min-height:12rem;">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-antenna"/></svg></div>
+            <div class="card-label">流量 TOP（nlbwmon）</div>
+        </div>
+        <div class="card-sub" id="dash-topn-hosts-note" style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">按 MAC/主机聚合（需 ubus luci.nlbw）</div>
+        <div id="dash-topn-hosts" style="font-size:12px;line-height:1.5;max-height:14rem;overflow:auto;">—</div>
+    </div>
+    <div class="status-card" style="min-height:12rem;">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-globe"/></svg></div>
+            <div class="card-label">layer7 / 协议 TOP</div>
+        </div>
+        <div class="card-sub" style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">nlbwmon 分类（非完整域名）</div>
+        <div id="dash-topn-domains" style="font-size:12px;line-height:1.5;max-height:14rem;overflow:auto;">—</div>
+    </div>
+    <div class="status-card" style="min-height:12rem;">
+        <div class="card-header">
+            <div class="card-icon"><svg class="arx-icon" aria-hidden="true"><use href="#i-activity"/></svg></div>
+            <div class="card-label">连接数 TOP（conntrack）</div>
+        </div>
+        <div class="card-sub" id="dash-topn-ct-note" style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">按目标 IPv4 聚合（短采样）</div>
+        <div id="dash-topn-ct" style="font-size:12px;line-height:1.5;max-height:14rem;overflow:auto;">—</div>
+    </div>
 </div>
 
 <div class="status-grid stat-grid" id="status-grid">

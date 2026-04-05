@@ -1,0 +1,13 @@
+{
+	"arx-flash": {
+		"description": "ARX3000M firmware backup / sysupgrade helper",
+		"read": {
+			"file": {
+				"/etc/openwrt_release": ["read"],
+				"/tmp/arx-flash-firmware.bin": ["read"],
+				"/tmp/arx-flash-last-test.log": ["read"]
+			}
+		},
+		"write": {}
+	}
+}

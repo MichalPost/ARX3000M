@@ -12,6 +12,10 @@ on:
         required: false
         default: ''
 
+env:
+  # Node 20 JS actions (e.g. softprops/action-gh-release) — opt into Node 24 on runner
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     name: 🚀 发布 Release
@@ -56,20 +60,40 @@ jobs:
           gh run download ${{ steps.resolve_run.outputs.run_id }} \
             --pattern "arx3000m-firmware-*" \
             --dir firmware-raw
-          # 展平目录：用相对路径生成唯一文件名，避免不同子目录同名文件互相覆盖
-          find firmware-raw -type f -print0 | while IFS= read -r -d '' f; do
-            rel="${f#firmware-raw/}"
-            rel="${rel//\//__}"
-            cp "$f" "firmware/$rel"
+          # 保留 sysupgrade / nand-boot / emmc-boot / misc 分目录（与 build 工作流一致；兼容 artifact 多包一层目录）
+          mkdir -p firmware
+          shopt -s nullglob
+          copied=0
+          for s in firmware-raw/sysupgrade firmware-raw/*/sysupgrade; do
+            if [ -d "$s" ]; then
+              parent=$(dirname "$s")
+              for d in sysupgrade nand-boot emmc-boot misc; do
+                if [ -d "$parent/$d" ]; then
+                  cp -a "$parent/$d" firmware/
+                  copied=1
+                fi
+              done
+              break
+            fi
           done
+          shopt -u nullglob
+          if [ "$copied" -eq 0 ]; then
+            parent=$(find firmware-raw -type d -name sysupgrade -printf '%h\n' -quit)
+            if [ -n "$parent" ]; then
+              for d in sysupgrade nand-boot emmc-boot misc; do
+                [ -d "$parent/$d" ] && cp -a "$parent/$d" firmware/ && copied=1
+              done
+            fi
+          fi
           count=$(find firmware -type f 2>/dev/null | wc -l)
           count=$(echo "$count" | tr -d ' ')
           if [ -z "$count" ] || [ "$count" -eq 0 ]; then
             echo "❌ 未找到任何固件文件，中止发布"
+            find firmware-raw -type f | head -50 || true
             exit 1
           fi
-          echo "📦 固件文件:"
-          ls -lh firmware/
+          echo "📦 固件目录:"
+          ls -R firmware/
 
       - name: 生成版本标签
         id: version
@@ -77,16 +101,33 @@ jobs:
           VERSION="v1.0.${{ steps.resolve_run.outputs.run_id }}"
           DATE=$(date '+%Y%m%d')
           SUFFIX="${{ inputs.tag_suffix }}"
+          ATTEMPT="-a${{ github.run_attempt }}"
           if [ -n "$SUFFIX" ]; then
-            TAG="${VERSION}-${DATE}-${SUFFIX}"
+            TAG="${VERSION}-${DATE}-${SUFFIX}${ATTEMPT}"
           else
-            TAG="${VERSION}-${DATE}"
+            TAG="${VERSION}-${DATE}${ATTEMPT}"
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: 准备 Release 附件（仅含非空子目录）
+        run: |
+          mkdir -p release-assets
+          any=0
+          for d in sysupgrade nand-boot emmc-boot misc; do
+            if [ -d "firmware/$d" ] && [ "$(ls -A firmware/$d 2>/dev/null)" ]; then
+              cp -a "firmware/$d" "release-assets/"
+              any=1
+            fi
+          done
+          if [ "$any" -eq 0 ]; then
+            echo "❌ 无有效固件子目录"
+            exit 1
+          fi
+          ls -R release-assets/
+
       - name: 创建 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.6.1
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "ARX3000M Firmware ${{ steps.version.outputs.tag }}"
@@ -96,17 +137,13 @@ jobs:
             **版本**: ${{ steps.version.outputs.tag }}
             **来源 Run**: [${{ steps.resolve_run.outputs.run_id }}](https://github.com/${{ github.repository }}/actions/runs/${{ steps.resolve_run.outputs.run_id }})
             **发布者**: ${{ github.actor }}
+            **说明**: 标签中的 `-aN` 为本次 Release 工作流的 `run_attempt`，重跑发布时可避免与已有 tag 冲突。
 
             ---
 
             ### 固件说明（OpenWrt `main` / `cmcc_rax3000m`）
 
-            | 文件（通配） | 用途 |
-            |------|------|
-            | `*cmcc_rax3000m*squashfs*sysupgrade*.itb` | **日常升级**：LuCI「备份/升级」或 SSH `sysupgrade` |
-            | `*cmcc_rax3000m*initramfs*recovery*.itb` | **救砖/串口**：U-Boot + TFTP 等（勿当普通 LuCI 包乱刷） |
-            | `*cmcc_rax3000m*nand-ddr3-*.bin`/`.fip` 或 `*nand-ddr4-*` | **裸写 Flash**：仅救砖/首次写入，**DDR3/DDR4 必须与硬件一致** |
-            | `*cmcc_rax3000m*emmc-*` | eMMC 算力版用；**NAND 版勿刷** |
+            产物目录：**`sysupgrade/`**（日常/ recovery）、**`nand-boot/`**（NAND 裸刷）、**`emmc-boot/`**（eMMC 算力版裸刷）、**`misc/`**（未归类上游文件，勿当日常 sysupgrade）。NAND 机切勿使用 `emmc-boot/` 内文件。
 
             ### 刷入方法（已运行 OpenWrt 时）
 
@@ -124,25 +161,8 @@ jobs:
             - ✅ WiFi 握手抓包工具
 
             > ⚠️ 请确认你的设备型号为 RAX3000M (MT7981B)，刷错型号可能导致变砖！
-          files: firmware/*
+          files: release-assets/**
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  cleanup:
-    name: 清理旧 Release
-    runs-on: ubuntu-22.04
-    needs: release
-    if: always() && needs.release.result == 'success'
-    permissions:
-      contents: write
-
-    steps:
-      - name: 清理旧的 Release (保留最新 5 个)
-        uses: dev-drprasad/delete-older-releases@v0.3.0
-        with:
-          keep_latest: 5
-          delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

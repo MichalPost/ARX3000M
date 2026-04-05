@@ -10,7 +10,10 @@
     <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-package"/></svg>诊断包（脱敏文本）</h2>
     <p class="arx-prose" style="margin-bottom:12px">汇总 uname、WAN 状态、日志与路由等，已弱化密码与 MAC；提交反馈前请再检查是否含隐私信息。</p>
     <div class="arx-action-row arx-action-row--flush">
-        <a href="<%=url('admin/arx-network/diag_bundle')%>?download=1" class="cbi-button cbi-button-apply" download>下载 arx-network-diag.txt</a>
+        <form method="post" action="<%=url('admin/arx-network/diag_bundle')%>" target="_blank" style="display:inline;margin:0;">
+            <input type="hidden" name="download" value="1" />
+            <button type="submit" class="cbi-button cbi-button-apply">下载 arx-network-diag.txt</button>
+        </form>
         <button type="button" class="cbi-button cbi-button-save" id="diag-copy-bundle">复制到剪贴板</button>
     </div>
     <pre id="diag-bundle-preview" class="arx-diag-bundle-preview"></pre>
@@ -120,7 +123,8 @@ function doNetstat() {
     if (!btn) return;
     btn.addEventListener('click', function() {
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', '<%=url("admin/arx-network/diag_bundle")%>?_=' + Date.now(), true);
+        xhr.open('POST', '<%=url("admin/arx-network/diag_bundle")%>', true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
         xhr.onload = function() {
             if (xhr.status !== 200) return;
             var pre = document.getElementById('diag-bundle-preview');
@@ -134,7 +138,7 @@ function doNetstat() {
                 }).catch(function() {});
             }
         };
-        xhr.send();
+        xhr.send('');
     });
 })();
 </script>

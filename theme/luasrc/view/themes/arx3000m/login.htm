@@ -6,11 +6,14 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#f1f5f9" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
     <title><%=pcdata(board_hostname()) %> - Login</title>
+    <link rel="icon" href="<%=media%>/favicon.svg" type="image/svg+xml">
     <script>
-    (function(){try{var T=['dark','light','sky','aurora'],L='arx-theme',LK='arx-theme-user-set';if(localStorage.getItem(LK)==='1'){var v=localStorage.getItem(L);if(v&&T.indexOf(v)>=0){document.documentElement.setAttribute('data-theme',v);return;}}var v2=localStorage.getItem(L);if(v2==='sky'||v2==='aurora'){if(T.indexOf(v2)>=0){document.documentElement.setAttribute('data-theme',v2);return;}}document.documentElement.setAttribute('data-theme','light');}catch(e){}})();
+    (function(){try{var T=['dark','light','sky','aurora'],L='arx-theme',LK='arx-theme-user-set',el=document.documentElement;if(localStorage.getItem(LK)==='1'){var v=localStorage.getItem(L);el.setAttribute('data-theme',v&&T.indexOf(v)>=0?v:'light');return;}var v2=localStorage.getItem(L);if((v2==='sky'||v2==='aurora')&&T.indexOf(v2)>=0){el.setAttribute('data-theme',v2);return;}var d=false;try{d=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;}catch(e1){}el.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();
     </script>
-    <link rel="stylesheet" href="<%=media%>/css/style.css?v=3.2">
+    <link rel="stylesheet" href="<%=media%>/css/style.css?v=3.3">
     <style>
         body.login-page {
             display: flex;
@@ -65,11 +68,10 @@
             box-shadow: 0 8px 32px rgba(var(--primary-rgb), 0.35);
             color: #fff;
         }
-        .logo-big svg {
-            width: 32px;
-            height: 32px;
-            stroke: currentColor;
-            fill: none;
+        .logo-big img {
+            width: 40px;
+            height: 40px;
+            display: block;
         }
         .login-logo h1 {
             font-family: var(--font-display, 'Sora', system-ui, sans-serif);
@@ -259,7 +261,7 @@
     <div class="login-wrap ani">
         <div class="login-logo">
             <div class="logo-big" aria-hidden="true">
-                <svg viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round"><path d="M12 20v-2M8.5 20H16M8.5 16a7 7 0 0111 0M6 12a10 10 0 0112 0M2.5 8a14 14 0 0119 0"/></svg>
+                <img src="<%=media%>/favicon.svg" width="40" height="40" alt="">
             </div>
             <h1><%=pcdata(board_hostname()) %></h1>
             <p>OpenWrt · MT7981B Filogic 820</p>
@@ -332,7 +334,7 @@
         </div>
     </div>
 
-    <script src="<%=media%>/js/arx.js?v=2.8"></script>
+    <script src="<%=media%>/js/arx.js?v=2.9"></script>
     <script>
         (function() {
             var LS_DEV = 'arx-known-devices';

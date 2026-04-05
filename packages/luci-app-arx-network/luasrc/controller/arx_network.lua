@@ -4,19 +4,79 @@ local uci = require "luci.model.uci"
 local nixio = require "nixio"
 module("luci.controller.arx.network", package.seeall)
 
--- [C1] 验证主机名/IP，防止命令注入（主机名用 LDH：字母数字点横线，不含 Lua %w 中的下划线）
+-- 与 netmgr 一致：禁止多余前导零、每段 0–255
+local function validate_ipv4_strict(ip)
+	if not ip or ip == "" then return false end
+	local a, b, c, d = ip:match("^(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)$")
+	if not a then return false end
+	local function oct(s)
+		if #s > 1 and s:sub(1, 1) == "0" then return false end
+		local n = tonumber(s)
+		return n ~= nil and n >= 0 and n <= 255
+	end
+	return oct(a) and oct(b) and oct(c) and oct(d)
+end
+
+-- 保守 IPv6 校验（供 ping/traceroute）；支持可选 zone id（%iface），校验前剥离
+local function validate_ipv6_lite(ip)
+	if not ip or ip == "" then return false end
+	if ip:sub(1, 1) == "[" and ip:sub(-1) == "]" then
+		ip = ip:sub(2, -2)
+	end
+	if ip == "" or #ip > 50 then return false end
+	local zone
+	if ip:find("%%", 1, true) then
+		local core, z = ip:match("^(.-)%%([^%%]+)$")
+		if not core or core == "" or not z or z == "" then return false end
+		ip = core
+		zone = z
+	end
+	if zone and #zone > 32 then return false end
+	if not ip:find(":", 1, true) then return false end
+	if ip:find("[^%x:]") then return false end
+	if ip:find(":::", 1, true) then return false end
+	local _, dc = ip:gsub("::", "")
+	if dc > 1 then return false end
+	if not ip:find("%x") then return false end
+
+	local function seg_ok(seg)
+		return seg ~= nil and seg:match("^%x%x?%x?%x?$") ~= nil
+	end
+	local left, right = ip:match("^(.-)::(.*)$")
+	if left then
+		local ln, rn = 0, 0
+		if left ~= "" then
+			for seg in left:gmatch("[^:]+") do
+				if not seg_ok(seg) then return false end
+				ln = ln + 1
+			end
+		end
+		if right ~= "" then
+			for seg in right:gmatch("[^:]+") do
+				if not seg_ok(seg) then return false end
+				rn = rn + 1
+			end
+		end
+		if ln + rn > 8 then return false end
+		return true
+	end
+	local n = 0
+	for seg in ip:gmatch("[^:]+") do
+		if not seg_ok(seg) then return false end
+		n = n + 1
+	end
+	return n == 8
+end
+
+-- [C1] 验证主机名/IP，防止命令注入（主机名含下划线；支持 IPv4/IPv6）
 local function validate_host(h)
 	if not h or h == "" then return false end
-	if h:match("^%d+%.%d+%.%d+%.%d+$") then
-		local a,b,c,d = h:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
-		a,b,c,d = tonumber(a),tonumber(b),tonumber(c),tonumber(d)
-		return a<=255 and b<=255 and c<=255 and d<=255
-	end
-	-- L-4: 纯数字字符串不是合法主机名，必须至少含一个字母或点
+	if validate_ipv4_strict(h) then return true end
+	if validate_ipv6_lite(h) then return true end
+	if h:find(":", 1, true) then return false end
 	if h:match("^%d+$") then return false end
-	-- 非 IPv4 的主机名须含至少一个字母，拒绝 "1.2" 等纯数字加点横线串
 	if not h:match("%a") then return false end
-	return #h <= 253 and h:match("^[%a%d%.%-]+$") ~= nil
+	return #h <= 253 and h:match("^[%a%d%.%-_]+$") ~= nil
 end
 
 -- [C1] 验证 ping count，限制 1-10
@@ -42,12 +102,22 @@ function index()
 	entry({"admin", "arx-network", "diag_bundle"}, call("action_diag_bundle")).leaf = true
 end
 
+local function ddns_init_unit_running(unit)
+	if not sys.init or not sys.init.enabled then return false end
+	local ok, r = pcall(function() return sys.init.enabled(unit) end)
+	return ok and r
+end
+
 function action_ddns_status()
 	http.prepare_content("application/json")
 	local ddns_services = {}
 
 	local u = uci.cursor()
 	u:foreach("ddns", "service", function(s)
+		local eu = "disabled"
+		if s.enabled == "1" then
+			eu = ddns_init_unit_running("ddns_" .. s[".name"]) and "running" or "stopped"
+		end
 		table.insert(ddns_services, {
 			name = s[".name"],
 			-- [H6] s.enabled 是字符串，非空字符串在 Lua 中均为 truthy，必须与 "1" 比较
@@ -56,7 +126,7 @@ function action_ddns_status()
 			service = s.service_name or "-",
 			last_update = s.last_update or "never",
 			force_seconds = s.force_seconds or 0,
-			enabled_unit = s.enabled == "1" and (sys.init.enabled("ddns_" .. s[".name"]) and "running" or "stopped") or "disabled"
+			enabled_unit = eu
 		})
 	end)
 
@@ -71,21 +141,32 @@ function action_upnp_status()
 		rules = {},
 		total_redirects = 0,
 		total_bytes_in = 0,
-		total_bytes_out = 0
+		total_bytes_out = 0,
+		parse_warning = false
 	}
 
 	if upnp_status.running then
 		local rules_raw = sys.exec("upnpc -l 2>/dev/null") or ""
 
 		for line in rules_raw:gmatch("[^\r\n]+") do
-			local proto, port, ip, desc, remaining = line:match("(%w+)%s+[%[->]%s+(%d+)%s+(%S+)%s+(.*)%s+%((%d+)%)")
-			if proto and port then
+			-- [M-4] upnpc -l 输出格式：  0 TCP  54321->192.168.1.100:8080  'desc'  1800
+			-- 用更宽松的模式匹配，兼容不同版本 upnpc 的输出差异
+			local proto, ext_port, int_addr, desc, dur =
+				line:match("%s*%d+%s+(%a+)%s+(%d+)%s*%->%s*(%S+)%s+'([^']*)'%s+(%d+)")
+			if not proto then
+				-- 备用格式（无引号描述）
+				proto, ext_port, int_addr, dur =
+					line:match("%s*%d+%s+(%a+)%s+(%d+)%s*%->%s*(%S+)%s+(%d+)")
+				desc = ""
+			end
+			if proto and ext_port then
+				local int_ip = int_addr and int_addr:match("^([^:]+)") or int_addr or ""
 				table.insert(upnp_status.rules, {
 					protocol = proto,
-					ext_port = port,
-					int_ip = ip,
+					ext_port = ext_port,
+					int_ip = int_ip,
 					description = desc or "",
-					duration = remaining or ""
+					duration = dur or ""
 				})
 				upnp_status.total_redirects = upnp_status.total_redirects + 1
 			end
@@ -95,6 +176,9 @@ function action_upnp_status()
 				upnp_status.total_bytes_in = tonumber(bytes_in_str) or 0
 				upnp_status.total_bytes_out = tonumber(bytes_out_str) or 0
 			end
+		end
+		if rules_raw:match("%S") and upnp_status.total_redirects == 0 then
+			upnp_status.parse_warning = true
 		end
 	end
 
@@ -109,16 +193,44 @@ function action_diag_ping()
 	if not validate_host(host) then http.write("Invalid host"); return end
 	if not validate_count(count) then count = "4" end
 	count = tostring(math.floor(tonumber(count)))
-	local result = sys.exec("ping -c " .. count .. " -W 3 " .. host .. " 2>&1")
+	local target = host
+	if target:sub(1, 1) == "[" and target:sub(-1) == "]" then
+		target = target:sub(2, -2)
+	end
+	local result
+	if validate_ipv6_lite(host) then
+		result = sys.exec("ping6 -c " .. count .. " -W 3 " .. target .. " 2>&1")
+	else
+		result = sys.exec("ping -c " .. count .. " -W 3 " .. target .. " 2>&1")
+	end
 	http.write(result or "Ping failed")
 end
 
 function action_diag_traceroute()
 	http.prepare_content("text/plain")
 	local host = http.formvalue("host") or "8.8.8.8"
-	-- [C1] 验证输入，防止命令注入
 	if not validate_host(host) then http.write("Invalid host"); return end
-	local result = sys.exec("traceroute -n -w 2 -q 1 -m 15 " .. host .. " 2>&1")
+	-- [H-2] 缩短阻塞时间，避免长时间占满 uhttpd worker（约 5s 量级上限）
+	local target = host
+	if target:sub(1, 1) == "[" and target:sub(-1) == "]" then
+		target = target:sub(2, -2)
+	end
+	local result
+	if validate_ipv6_lite(host) then
+		local bin = nil
+		if sys.exec("command -v traceroute6 >/dev/null 2>&1 && echo y"):match("y") then
+			bin = "traceroute6"
+		elseif sys.exec("command -v traceroute >/dev/null 2>&1 && echo y"):match("y") then
+			bin = "traceroute -6"
+		end
+		if not bin then
+			http.write("Traceroute6 not available")
+			return
+		end
+		result = sys.exec("timeout 5 " .. bin .. " -n -w 1 -q 1 -m 8 " .. target .. " 2>&1")
+	else
+		result = sys.exec("timeout 5 traceroute -n -w 1 -q 1 -m 8 " .. target .. " 2>&1")
+	end
 	http.write(result or "Traceroute failed")
 end
 
@@ -178,22 +290,42 @@ end
 
 local function sanitize_diag_text(t)
 	if not t or t == "" then return "" end
-	-- [M8] 覆盖所有常见 UCI 密码/密钥字段名（单引号和双引号格式）
+	-- [M8] 覆盖所有常见 UCI 密码/密钥字段名（单引号、双引号、无引号格式）
 	local pwd_keys = { "password", "key", "passphrase", "psk", "secret", "passwd", "pin" }
 	for _, k in ipairs(pwd_keys) do
 		t = t:gsub("option%s+" .. k .. "%s+'[^']*'", "option " .. k .. " '***'")
 		t = t:gsub('option%s+' .. k .. '%s+"[^"]*"', 'option ' .. k .. ' "***"')
+		t = t:gsub("option%s+" .. k .. "%s+(%S+)", "option " .. k .. " '***'")
 	end
-	-- [MED-4] MAC 脱敏：精确匹配 6 组 xx:xx:xx:xx:xx:xx（每组恰好 2 位十六进制），
-	-- 避免误匹配 IPv6 地址（IPv6 每组 1-4 位，且分隔符为 :，但组数不同）
-	-- 使用词边界锚定：前后不能是十六进制字符或冒号
-	t = t:gsub("(%x%x:%x%x:%x%x):%x%x:%x%x:%x%x", function(oui)
-		return oui .. ":xx:xx:xx"
-	end)
+	-- [M-3] 单次扫描替换 MAC，避免多模式 gsub 边界重叠导致重复脱敏
+	local macpat = "%x%x:%x%x:%x%x:%x%x:%x%x:%x%x"
+	local pos = 1
+	while pos <= #t do
+		local i, j = t:find(macpat, pos)
+		if not i then break end
+		local bef = (i > 1) and t:sub(i - 1, i - 1) or ""
+		local aft = (j < #t) and t:sub(j + 1, j + 1) or ""
+		local edge_ok = (bef == "" or not bef:match("[%x:]"))
+			and (aft == "" or not aft:match("[%x:]"))
+		if edge_ok then
+			local mac = t:sub(i, j)
+			local rep = mac:sub(1, 8) .. ":xx:xx:xx"
+			t = t:sub(1, i - 1) .. rep .. t:sub(j + 1)
+			pos = i + #rep
+		else
+			pos = j + 1
+		end
+	end
 	return t
 end
 
 function action_diag_bundle()
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
+		http.status(405, "Method Not Allowed")
+		http.prepare_content("text/plain; charset=utf-8")
+		http.write("Method Not Allowed")
+		return
+	end
 	local qdl = http.formvalue("download")
 	if qdl == "1" then
 		http.header("Content-Disposition", "attachment; filename=arx-network-diag.txt")

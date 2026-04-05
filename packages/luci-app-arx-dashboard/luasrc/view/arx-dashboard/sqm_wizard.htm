@@ -1,0 +1,131 @@
+<%+header%>
+
+<div class="page-header page-hd ani animate-in">
+	<div class="page-title-row">
+		<h1><svg class="arx-icon" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-activity"/></svg> SQM / QoS 向导</h1>
+		<span class="page-subtitle page-sub">填入<strong>测得的</strong>下行/上行带宽（Mbps），按签约带宽的 <strong>90%</strong>（可调）换算为 kbit/s 写入 <code>/etc/config/sqm</code>。建议配合以太网测速；Wi‑Fi 测速会低估。</span>
+	</div>
+</div>
+
+<div class="cbi-section animate-in">
+	<div id="arx-sqm-status" style="font-size:13px;margin-bottom:14px;">加载中…</div>
+	<div class="arx-callout arx-callout--info" style="margin-bottom:16px;font-size:12px;">
+		<strong>经验值：</strong>SQM 目标速率不要超过运营商签约带宽的约 90%，为突发与协议头留余量。脚本一般选 <code>cake</code> + <code>piece_of_cake.qos</code>；低端设备可试 <code>fq_codel</code> + <code>simple.qos</code>。
+	</div>
+	<div class="cbi-value-field">
+		<label for="arx-sqm-iface">接口（留空则使用 WAN device）</label>
+		<input type="text" id="arx-sqm-iface" class="cbi-input-text" style="max-width:22em" placeholder="如 pppoe-wan、wan" />
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px">
+		<label for="arx-sqm-down">测得下行 (Mbps)</label>
+		<input type="number" step="0.1" min="1" id="arx-sqm-down" class="cbi-input-text" style="max-width:12em" />
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px">
+		<label for="arx-sqm-up">测得上行 (Mbps)</label>
+		<input type="number" step="0.1" min="1" id="arx-sqm-up" class="cbi-input-text" style="max-width:12em" />
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px">
+		<label for="arx-sqm-pct">保留比例（默认 90）</label>
+		<input type="number" min="50" max="100" id="arx-sqm-pct" class="cbi-input-text" style="max-width:8em" value="90" />
+		<span style="font-size:12px;opacity:0.85;margin-left:8px">%</span>
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px">
+		<label for="arx-sqm-qdisc">队列规则</label>
+		<select id="arx-sqm-qdisc" class="cbi-input-select">
+			<option value="cake">cake（推荐）</option>
+			<option value="fq_codel">fq_codel</option>
+		</select>
+	</div>
+	<div class="cbi-value-field" style="margin-top:10px">
+		<label for="arx-sqm-script">脚本</label>
+		<select id="arx-sqm-script" class="cbi-input-select">
+			<option value="piece_of_cake.qos">piece_of_cake.qos（cake）</option>
+			<option value="simple.qos">simple.qos（fq_codel 常用）</option>
+		</select>
+	</div>
+	<button type="button" class="cbi-button cbi-button-apply" id="arx-sqm-apply" style="margin-top:14px">写入 SQM 并重启服务</button>
+	<div id="arx-sqm-msg" style="margin-top:12px;font-size:13px;"></div>
+	<p style="margin-top:18px;font-size:13px;">
+		<a id="arx-sqm-luci" href="#" class="cbi-button cbi-button-link">打开标准 SQM QoS 页面</a>
+		<span style="margin-left:12px;font-size:12px;opacity:0.85" id="arx-sqm-netperf"></span>
+	</p>
+</div>
+
+<script>
+(function() {
+	var ST = '<%=url("admin/arx-dashboard/sqm_wizard_status")%>';
+	var AP = '<%=url("admin/arx-dashboard/sqm_wizard_apply")%>';
+	function loadStatus() {
+		fetch(ST + '?_=' + Date.now(), { credentials: 'same-origin' })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				var el = document.getElementById('arx-sqm-status');
+				var iface = document.getElementById('arx-sqm-iface');
+				var luci = document.getElementById('arx-sqm-luci');
+				var np = document.getElementById('arx-sqm-netperf');
+				if (luci && d.luci_sqm) luci.href = d.luci_sqm;
+				if (iface && !iface.value) iface.placeholder = d.wan_interface || 'wan';
+				var lines = [];
+				lines.push('检测 WAN 接口：<code>' + (d.wan_interface || '—') + '</code>');
+				lines.push(d.hint || '');
+				if (d.sqm_sections && d.sqm_sections.length) {
+					lines.push('已有 SQM 段：');
+					d.sqm_sections.forEach(function(s) {
+						lines.push(' — ' + s.name + ' · if=' + (s.interface || '') + ' · en=' + (s.enabled || '0') + ' · ↓' + (s.download || '') + ' ↑' + (s.upload || '') + ' · ' + (s.qdisc || ''));
+					});
+				} else {
+					lines.push('当前无 sqm queue 配置或文件为空（将新建一段）。');
+				}
+				if (el) el.innerHTML = lines.map(function(t) { return '<div style="margin:4px 0">' + t + '</div>'; }).join('');
+				if (np) np.textContent = d.netperf_available ? '已检测到 netperf，可在 SSH 自行对打测速。' : '未检测到 netperf 二进制。';
+			})
+			.catch(function() {
+				var el = document.getElementById('arx-sqm-status');
+				if (el) el.textContent = '状态加载失败';
+			});
+	}
+	document.getElementById('arx-sqm-apply').onclick = function() {
+		var msg = document.getElementById('arx-sqm-msg');
+		msg.textContent = '提交中…';
+		msg.style.color = '';
+		var fd = new FormData();
+		fd.append('down_mbps', document.getElementById('arx-sqm-down').value);
+		fd.append('up_mbps', document.getElementById('arx-sqm-up').value);
+		fd.append('pct', document.getElementById('arx-sqm-pct').value);
+		fd.append('qdisc', document.getElementById('arx-sqm-qdisc').value);
+		fd.append('script', document.getElementById('arx-sqm-script').value);
+		var ifv = document.getElementById('arx-sqm-iface').value.trim();
+		if (ifv) fd.append('interface', ifv);
+		fetch(AP, { method: 'POST', credentials: 'same-origin', body: fd })
+			.then(function(r) { return r.json(); })
+			.then(function(d) {
+				if (d.ok) {
+					msg.style.color = 'var(--success, #4ade80)';
+					msg.textContent = '已写入段 ' + (d.section || '') + '：接口 ' + (d.interface || '') + '，↓ ' + d.download_kbit + ' kbit/s · ↑ ' + d.upload_kbit + ' kbit/s（按 ' + d.pct_used + '% 折算）。';
+					loadStatus();
+				} else {
+					msg.style.color = 'var(--danger, #f87171)';
+					msg.textContent = d.error || '失败';
+				}
+			})
+			.catch(function() {
+				msg.style.color = 'var(--danger, #f87171)';
+				msg.textContent = '请求失败';
+			});
+	};
+	var qd = document.getElementById('arx-sqm-qdisc');
+	var sc = document.getElementById('arx-sqm-script');
+	function syncSqmScript() {
+		if (!qd || !sc) return;
+		if (qd.value === 'cake') {
+			sc.value = 'piece_of_cake.qos';
+		} else {
+			sc.value = 'simple.qos';
+		}
+	}
+	if (qd) qd.addEventListener('change', syncSqmScript);
+	loadStatus();
+})();
+</script>
+
+<%+footer%>

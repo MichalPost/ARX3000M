@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "disclaimer": "以下为固件维护方整理的常见组合；包名随 OpenWrt 分支可能变化。kmod 须与当前内核一致。第三方 feed 包请先配置对应软件源。",
+  "categories": [
+    {
+      "id": "proxy",
+      "title": "科学上网 / 代理",
+      "items": [
+        {
+          "id": "openclash",
+          "title": "OpenClash",
+          "description": "Clash 图形化，需已配置 openclash 等第三方 feed（本固件默认镜像常已集成）。",
+          "packages": ["luci-app-openclash"],
+          "feed_note": "依赖非官方 feed 时请先确认 distfeeds 与 opkg update。"
+        },
+        {
+          "id": "wireguard",
+          "title": "WireGuard",
+          "description": "轻量 VPN 客户端/服务端 LuCI。",
+          "packages": ["luci-app-wireguard", "wireguard-tools"]
+        },
+        {
+          "id": "openvpn",
+          "title": "OpenVPN",
+          "description": "经典 SSL VPN。",
+          "packages": ["luci-app-openvpn", "openvpn-openssl"]
+        }
+      ]
+    },
+    {
+      "id": "dns_adblock",
+      "title": "DNS / 去广告",
+      "items": [
+        {
+          "id": "adguardhome",
+          "title": "AdGuard Home",
+          "description": "网络级 DNS 过滤与统计。",
+          "packages": ["luci-app-adguardhome", "adguardhome"]
+        },
+        {
+          "id": "simple_adblock",
+          "title": "Simple AdBlock",
+          "description": "基于 dnsmasq 的轻量广告拦截。",
+          "packages": ["luci-app-simple-adblock", "simple-adblock"]
+        }
+      ]
+    },
+    {
+      "id": "download",
+      "title": "下载与文件",
+      "items": [
+        {
+          "id": "aria2",
+          "title": "Aria2",
+          "description": "命令行下载器 + LuCI（默认固件可能未编入，需 opkg 安装）。",
+          "packages": ["luci-app-aria2", "aria2"],
+          "feed_note": "若 opkg 提示无包，请确认官方 packages feed 已启用。"
+        },
+        {
+          "id": "filebrowser",
+          "title": "FileBrowser",
+          "description": "Web 文件管理。",
+          "packages": ["luci-app-filebrowser", "filebrowser-bin"]
+        },
+        {
+          "id": "samba",
+          "title": "Samba 网络共享",
+          "description": "局域网文件共享服务。",
+          "packages": ["luci-app-samba4", "samba4-server"]
+        }
+      ]
+    },
+    {
+      "id": "qos_monitor",
+      "title": "QoS / 监控",
+      "items": [
+        {
+          "id": "sqm",
+          "title": "SQM 智能队列",
+          "description": "cake / fq_codel 缓冲膨胀缓解。",
+          "packages": ["luci-app-sqm", "sqm-scripts"]
+        },
+        {
+          "id": "nlbwmon",
+          "title": "nlbwmon 流量统计",
+          "description": "按主机/域名统计带宽（若尚未安装）。",
+          "packages": ["luci-app-nlbwmon", "nlbwmon"]
+        },
+        {
+          "id": "vnstat2",
+          "title": "vnStat2",
+          "description": "按接口长期流量图（可选）。",
+          "packages": ["luci-app-vnstat2", "vnstat2"],
+          "feed_note": "部分分支包名为 vnstat / luci-app-vnstat，请以 opkg 搜索结果为准。"
+        }
+      ]
+    }
+  ]
+}

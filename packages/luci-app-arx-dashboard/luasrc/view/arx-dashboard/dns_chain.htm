@@ -34,6 +34,11 @@ local svc_clash    = runsvc("openclash")
   </div>
 </div>
 
+<div class="cbi-section animate-in" style="margin-bottom:12px;padding:10px 14px;font-size:13px;">
+  <a href="<%=url('admin/arx-dashboard/dns_unified')%>" class="cbi-button cbi-button-apply">DNS 统一面板</a>
+  <span style="margin-left:10px;opacity:0.9">冲突检测、端口监听、一键设置 dnsmasq 主上游</span>
+</div>
+
 <!-- Chain Diagram -->
 <div class="cbi-section animate-in">
   <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-activity"/></svg>链路示意图</h2>
@@ -134,6 +139,7 @@ local svc_clash    = runsvc("openclash")
 <div class="cbi-section">
   <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-globe"/></svg>相关链接</h2>
   <div class="arx-link-row">
+    <a href="<%=url('admin/arx-dashboard/dns_unified')%>">DNS 统一面板</a>
     <a href="<%=url('admin/arx-dashboard/adguard_openclash')%>">AdGuard+OC 向导</a>
     <a href="<%=url('admin/arx-dashboard/overview')%>">仪表盘</a>
     <a href="<%=url('admin/arx-dashboard/recovery')%>">恢复说明</a>

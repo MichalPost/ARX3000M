@@ -1,0 +1,112 @@
+<%+header%>
+
+<div class="page-header page-hd ani animate-in">
+	<div class="page-title-row">
+		<h1><svg class="arx-icon" style="width:28px;height:28px;color:var(--primary-light);" aria-hidden="true"><use href="#i-wifi"/></svg> 漫游与 802.11k/v</h1>
+		<span class="page-subtitle page-sub">各 AP 的 BSSID、信道、发射功率、关联终端 RSSI（<code>iw station dump</code>）；k / r / BSS Transition 来自 UCI <code>wireless</code>（需接口 <code>ifname</code> 与运行中 VIF 一致）。</span>
+	</div>
+</div>
+
+<div class="arx-rssi-page animate-in">
+	<div class="arx-action-row arx-action-row--flush" style="margin-bottom:16px">
+		<a href="<%=url('admin/network/wireless')%>" class="cbi-button cbi-button-link">无线设置</a>
+		<a href="<%=url('admin/arx-dashboard/wifi_rssi')%>" class="cbi-button cbi-button-link">接口级 RSSI</a>
+		<a href="<%=url('admin/arx-dashboard/overview')%>" class="cbi-button cbi-button-link">仪表盘</a>
+		<button type="button" class="cbi-button cbi-button-neutral" id="arx-roam-refresh">刷新</button>
+	</div>
+	<div id="arx-roam-mtk" class="arx-callout arx-callout--info" style="display:none;margin-bottom:12px;font-size:12px"></div>
+	<div id="arx-roam-loading" style="padding:24px;text-align:center;color:var(--text-muted);">加载中…</div>
+	<div id="arx-roam-empty" style="display:none;padding:24px;text-align:center;color:var(--text-muted);">未检测到 AP 接口或暂无数据。</div>
+	<div id="arx-roam-root" style="display:none;"></div>
+</div>
+
+<script>
+(function() {
+	var DATA_URL = '<%=url("admin/arx-dashboard/roaming_data")%>';
+	function esc(t) {
+		var d = document.createElement('div');
+		d.appendChild(document.createTextNode(t == null ? '' : String(t)));
+		return d.innerHTML;
+	}
+	function flagOn(v) {
+		if (v === '1' || v === 'true' || v === true) return '<span class="badge badge-success">开</span>';
+		if (v === '0' || v === 'false' || v === false) return '<span class="badge" style="opacity:0.85">关</span>';
+		return '<span class="badge" style="opacity:0.7">—</span>';
+	}
+	function render(data) {
+		var load = document.getElementById('arx-roam-loading');
+		var empty = document.getElementById('arx-roam-empty');
+		var root = document.getElementById('arx-roam-root');
+		var mtk = document.getElementById('arx-roam-mtk');
+		if (load) load.style.display = 'none';
+		if (mtk) {
+			if (data && data.mtk_note) {
+				mtk.style.display = 'block';
+				mtk.textContent = data.mtk_note;
+			} else {
+				mtk.style.display = 'none';
+			}
+		}
+		var aps = (data && data.aps) || [];
+		if (!aps.length) {
+			if (empty) empty.style.display = 'block';
+			if (root) root.style.display = 'none';
+			return;
+		}
+		if (empty) empty.style.display = 'none';
+		if (root) {
+			root.style.display = 'block';
+			var html = '';
+			for (var i = 0; i < aps.length; i++) {
+				var ap = aps[i];
+				html += '<div class="cbi-section animate-in" style="margin-bottom:16px">';
+				html += '<h3 class="section-title" style="margin-top:0">' + esc(ap.ifname) + ' · ' + esc(ap.ssid || '（隐藏 SSID）') + '</h3>';
+				html += '<table class="cbi-section-table" style="max-width:720px">';
+				html += '<tr><th>BSSID</th><td><code>' + esc(ap.bssid || '—') + '</code></td></tr>';
+				html += '<tr><th>信道 / 频段</th><td>' + esc(ap.channel || '—') + ' · ' + esc(ap.band_hint || '') + '</td></tr>';
+				html += '<tr><th>发射功率</th><td>' + (ap.tx_power_dbm != null ? esc(ap.tx_power_dbm + ' dBm') : '（驱动未报告）') + '</td></tr>';
+				html += '<tr><th>噪声</th><td>' + (ap.noise_dbm != null ? esc(ap.noise_dbm + ' dBm') : '—') + '</td></tr>';
+				html += '<tr><th>802.11k</th><td>' + flagOn(ap.ieee80211k) + '</td></tr>';
+				html += '<tr><th>802.11r (FT)</th><td>' + flagOn(ap.ieee80211r) + '</td></tr>';
+				html += '<tr><th>BSS Transition (11v)</th><td>' + flagOn(ap.bss_transition) + '</td></tr>';
+				if (ap.uci_section) html += '<tr><th>UCI 段</th><td><code>wireless.' + esc(ap.uci_section) + '</code></td></tr>';
+				html += '</table>';
+				var stas = ap.stations || [];
+				if (!stas.length) {
+					html += '<p style="margin:12px 0 0;font-size:13px;color:var(--text-muted)">当前无关联 STA 或驱动未提供 station dump。</p>';
+				} else {
+					html += '<h4 style="margin:14px 0 8px">关联终端</h4>';
+					html += '<table class="cbi-section-table"><thead><tr><th>MAC</th><th>RSSI (dBm)</th><th>inactive (ms)</th><th>rx / tx bytes</th><th>tx failed</th></tr></thead><tbody>';
+					for (var j = 0; j < stas.length; j++) {
+						var s = stas[j];
+						html += '<tr><td><code>' + esc(s.mac) + '</code></td><td>' + (s.signal_dbm != null ? esc(String(s.signal_dbm)) : '—') + '</td><td>' + esc(String(s.inactive_ms != null ? s.inactive_ms : '—')) + '</td><td style="font-size:11px">' + esc(String(s.rx_bytes || 0)) + ' / ' + esc(String(s.tx_bytes || 0)) + '</td><td>' + esc(String(s.tx_failed != null ? s.tx_failed : '—')) + '</td></tr>';
+					}
+					html += '</tbody></table>';
+				}
+				html += '</div>';
+			}
+			root.innerHTML = html;
+		}
+	}
+	function load() {
+		var load = document.getElementById('arx-roam-loading');
+		var empty = document.getElementById('arx-roam-empty');
+		var root = document.getElementById('arx-roam-root');
+		if (load) load.style.display = 'block';
+		if (empty) empty.style.display = 'none';
+		if (root) root.style.display = 'none';
+		fetch(DATA_URL, { credentials: 'same-origin' })
+			.then(function(r) { return r.json(); })
+			.then(render)
+			.catch(function() {
+				if (load) load.style.display = 'none';
+				if (empty) { empty.style.display = 'block'; empty.textContent = '加载失败'; }
+			});
+	}
+	var btn = document.getElementById('arx-roam-refresh');
+	if (btn) btn.onclick = function() { load(); };
+	load();
+})();
+</script>
+
+<%+footer%>

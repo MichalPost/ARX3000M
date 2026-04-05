@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-theme-arx3000m
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=5
+PKG_RELEASE:=6
 
 PKG_MAINTAINER:=ARX3000M Custom Build
 PKG_LICENSE:=Apache-2.0

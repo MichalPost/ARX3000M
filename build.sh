@@ -59,35 +59,8 @@ apply_openwrt_patches() {
     fi
 }
 
-cmd_init() {
-    echo -e "${BLUE}[→] 运行环境初始化脚本...${NC}"
-    if [ ! -f "$SCRIPT_DIR/setup-env.sh" ]; then
-        echo -e "${RED}[✗] setup-env.sh 不存在: $SCRIPT_DIR/setup-env.sh${NC}"
-        echo -e "${YELLOW}请参考 README 手动准备编译环境，或从项目仓库获取 setup-env.sh${NC}"
-        exit 1
-    fi
-    bash "$SCRIPT_DIR/setup-env.sh" "$SCRIPT_DIR"
-}
-
-cmd_feed() {
-    check_openwrt
-    cd "$OPENWRT_DIR"
-    if [ -f "$SCRIPT_DIR/scripts/ensure-extra-feeds.sh" ]; then
-        bash "$SCRIPT_DIR/scripts/ensure-extra-feeds.sh" "$(pwd)"
-    fi
-    echo -e "${YELLOW}[→] 更新 feeds...${NC}"
-    ./scripts/feeds update -a
-    echo -e "${YELLOW}[→] 安装 feeds 软件包（与 CI build.yml 一致）...${NC}"
-    ./scripts/feeds install -a -f -p packages
-    ./scripts/feeds install -a -f -p luci
-    ./scripts/feeds install -a -f -p routing
-    ./scripts/feeds install -a -f -p telephony || true
-    ./scripts/feeds install -a -f -p video || true
-    ./scripts/feeds install -a -f -p openclash
-    echo -e "${GREEN}[✓] Feeds 完成${NC}"
-}
-
-cmd_copy() {
+# 与 CI build.yml 一致：先同步 packages/theme 到 package/custom，再 feeds/defconfig/编译
+sync_custom_packages() {
     check_openwrt
     cd "$OPENWRT_DIR"
 
@@ -114,10 +87,47 @@ cmd_copy() {
     echo -e "${GREEN}[✓] 自定义包复制完成${NC}"
 }
 
+cmd_init() {
+    echo -e "${BLUE}[→] 运行环境初始化脚本...${NC}"
+    if [ ! -f "$SCRIPT_DIR/setup-env.sh" ]; then
+        echo -e "${RED}[✗] setup-env.sh 不存在: $SCRIPT_DIR/setup-env.sh${NC}"
+        echo -e "${YELLOW}请参考 README 手动准备编译环境，或从项目仓库获取 setup-env.sh${NC}"
+        exit 1
+    fi
+    bash "$SCRIPT_DIR/setup-env.sh" "$SCRIPT_DIR"
+}
+
+cmd_feed() {
+    sync_custom_packages
+    if [ -f "$SCRIPT_DIR/scripts/ensure-extra-feeds.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/ensure-extra-feeds.sh" "$(pwd)"
+    fi
+    echo -e "${YELLOW}[→] 更新 feeds...${NC}"
+    ./scripts/feeds update -a
+    echo -e "${YELLOW}[→] 安装 feeds 软件包（与 CI build.yml 一致）...${NC}"
+    ./scripts/feeds install -a -f -p packages
+    ./scripts/feeds install -a -f -p luci
+    ./scripts/feeds install -a -f -p routing
+    ./scripts/feeds install -a -f -p telephony || true
+    ./scripts/feeds install -a -f -p video || true
+    ./scripts/feeds install -a -f -p openclash
+    if [ -f "$SCRIPT_DIR/scripts/patch-packages-feed.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/patch-packages-feed.sh" "$(pwd)"
+    fi
+    echo -e "${GREEN}[✓] Feeds 完成${NC}"
+}
+
+cmd_copy() {
+    sync_custom_packages
+}
+
 cmd_config() {
-    check_openwrt
+    sync_custom_packages
     apply_openwrt_patches
     cd "$OPENWRT_DIR"
+    if [ -f "$SCRIPT_DIR/scripts/patch-packages-feed.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/patch-packages-feed.sh" "$(pwd)"
+    fi
 
     local CONFIG_FILE="$SCRIPT_DIR/config/rax3000m.config"
     if [ ! -f "$CONFIG_FILE" ]; then
@@ -146,9 +156,12 @@ cmd_download() {
 }
 
 cmd_build() {
-    check_openwrt
+    sync_custom_packages
     apply_openwrt_patches
     cd "$OPENWRT_DIR"
+    if [ -f "$SCRIPT_DIR/scripts/patch-packages-feed.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/patch-packages-feed.sh" "$(pwd)"
+    fi
 
     local START_TIME=$(date +%s)
 
@@ -181,9 +194,12 @@ cmd_build() {
 }
 
 cmd_quick() {
-    check_openwrt
+    sync_custom_packages
     apply_openwrt_patches
     cd "$OPENWRT_DIR"
+    if [ -f "$SCRIPT_DIR/scripts/patch-packages-feed.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/patch-packages-feed.sh" "$(pwd)"
+    fi
     echo -e "${YELLOW}[→] 快速增量编译固件...${NC}"
     # [M9] 同 cmd_build
     set -o pipefail
@@ -270,8 +286,9 @@ show_output() {
     local OUTPUT_DIR="$OPENWRT_DIR/bin/targets/mediatek/filogic"
     if [ -d "$OUTPUT_DIR" ]; then
         echo -e "\n${CYAN}📦 编译产物:${NC}"
+        ls -lh "$OUTPUT_DIR"/*.itb 2>/dev/null | awk '{print "  📀 " $9, "(" $5 ")  （日常/救砖 FIT，优先看 .itb）"}'
         ls -lh "$OUTPUT_DIR"/*sysupgrade* 2>/dev/null | awk '{print "  📄 " $9, "(" $5 ")"}'
-        ( ls -lh "$OUTPUT_DIR"/*-squashfs-sysupgrade.bin "$OUTPUT_DIR"/*-squashfs-factory.bin "$OUTPUT_DIR"/*-squashfs-initramfs-kernel.bin 2>/dev/null || true ) | awk '{print "  📦 " $9, "(" $5 ")  (.bin 别名，FIT 与 .itb / recovery 相同)"}'
+        ( ls -lh "$OUTPUT_DIR"/*-squashfs-sysupgrade.bin "$OUTPUT_DIR"/*-squashfs-factory.bin "$OUTPUT_DIR"/*-squashfs-initramfs-kernel.bin 2>/dev/null || true ) | awk '{print "  📦 " $9, "(" $5 ")  （若上游仍产出同名 .bin FIT 别名则列出；日常升级以 .itb 为准）"}'
         ls -lh "$OUTPUT_DIR"/*initramfs* 2>/dev/null | awk '{print "  🧪 " $9, "(" $5 ")  (内存根文件系统 / 临时或救砖)"}'
         ls -lh "$OUTPUT_DIR"/*factory* 2>/dev/null | awk '{print "  🏭 " $9, "(" $5 ")"}'
         echo ""

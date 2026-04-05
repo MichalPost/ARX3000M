@@ -79,25 +79,41 @@ create_workspace() {
     echo -e "\n${YELLOW}[→] 创建工作目录: $WORK_DIR${NC}"
     mkdir -p "$WORK_DIR"
     cd "$WORK_DIR"
-    echo "$WORK_DIR" > /tmp/arx3000m_workdir
+    export ARX3000M_SETUP_WORKDIR="$(pwd)"
     echo -e "${GREEN}[✓] 工作目录就绪${NC}"
 }
 
 # ---- 克隆 OpenWrt 源码 ----
 clone_openwrt() {
-    local WORK_DIR=$(cat /tmp/arx3000m_workdir 2>/dev/null || echo ".")
+    local WORK_DIR="${ARX3000M_SETUP_WORKDIR:?ARX3000M_SETUP_WORKDIR unset}"
     cd "$WORK_DIR"
 
     if [ -d "openwrt" ]; then
         echo -e "${YELLOW}[!] openwrt 目录已存在，同步分支 ${OPENWRT_BRANCH}...${NC}"
         cd openwrt
-        git fetch origin "${OPENWRT_BRANCH}" --depth 1 2>/dev/null || true
-        git checkout "${OPENWRT_BRANCH}" 2>/dev/null || true
-        git pull --ff-only origin "${OPENWRT_BRANCH}" 2>/dev/null || true
+        if ! git fetch origin "${OPENWRT_BRANCH}" --depth 1; then
+            echo -e "${RED}[✗] git fetch origin ${OPENWRT_BRANCH} 失败${NC}" >&2
+            exit 1
+        fi
+        if ! git checkout "${OPENWRT_BRANCH}"; then
+            echo -e "${RED}[✗] git checkout ${OPENWRT_BRANCH} 失败${NC}" >&2
+            exit 1
+        fi
+        if ! git pull --ff-only origin "${OPENWRT_BRANCH}"; then
+            echo -e "${RED}[✗] git pull --ff-only origin ${OPENWRT_BRANCH} 失败（请处理本地提交或改用干净克隆）${NC}" >&2
+            exit 1
+        fi
     else
         echo -e "\n${YELLOW}[→] 克隆 OpenWrt 官方源码 (${OPENWRT_BRANCH})...${NC}"
         git clone https://github.com/openwrt/openwrt.git --depth 1 --branch "${OPENWRT_BRANCH}"
         cd openwrt
+    fi
+
+    local cur_branch
+    cur_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    if [ "$cur_branch" != "$OPENWRT_BRANCH" ]; then
+        echo -e "${RED}[✗] 当前检出不在分支 ${OPENWRT_BRANCH}（当前: ${cur_branch:-unknown}）${NC}" >&2
+        exit 1
     fi
 
     echo -e "${GREEN}[✓] OpenWrt 源码就绪 (版本: $(git describe --tags 2>/dev/null || echo 'latest'))${NC}"
@@ -118,6 +134,9 @@ update_feeds() {
     ./scripts/feeds install -a -f -p telephony || true
     ./scripts/feeds install -a -f -p video || true
     ./scripts/feeds install -a -f -p openclash
+    if [ -n "$PROJECT_ROOT" ] && [ -f "$PROJECT_ROOT/scripts/patch-packages-feed.sh" ]; then
+        bash "$PROJECT_ROOT/scripts/patch-packages-feed.sh" "$(pwd)"
+    fi
     echo -e "${GREEN}[✓] Feeds 更新安装完成${NC}"
 }
 
@@ -180,7 +199,7 @@ main() {
     create_workspace "$WORK_DIR"
     clone_openwrt
     if [ -f "$PROJECT_ROOT/scripts/apply-openwrt-patches.sh" ]; then
-        bash "$PROJECT_ROOT/scripts/apply-openwrt-patches.sh" "$PROJECT_ROOT" "$WORK_DIR/openwrt"
+        bash "$PROJECT_ROOT/scripts/apply-openwrt-patches.sh" "$PROJECT_ROOT" "${ARX3000M_SETUP_WORKDIR}/openwrt"
     fi
     copy_custom_packages "$PROJECT_ROOT"
     update_feeds "$PROJECT_ROOT"
@@ -191,7 +210,7 @@ main() {
     echo -e "${BLUE}============================================${NC}"
     echo -e ""
     echo -e " ${YELLOW}后续步骤:${NC}"
-    echo -e "  1. cd $(cat /tmp/arx3000m_workdir)/openwrt"
+    echo -e "  1. cd ${ARX3000M_SETUP_WORKDIR}/openwrt"
     echo -e "  2. make menuconfig          # 如需调整配置"
     echo -e "  3. make download -j8        # 下载源码"
     echo -e "  4. make -j$(nproc) V=s      # 开始编译（V=s 显示详细日志）"

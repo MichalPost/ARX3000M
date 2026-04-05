@@ -33,6 +33,8 @@ env:
   UPLOAD_BIN: true
   UPLOAD_FIRMWARE: true
   CACHE_DIR: ${{ github.workspace }}/cache
+  # Node 20 JS actions (e.g. softprops/action-gh-release) — opt into Node 24 on runner
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -53,7 +55,7 @@ jobs:
       - name: 获取缓存 Key
         id: cache_keys
         run: |
-          echo "key=arx3000m-${{ env.OPENWRT_BRANCH }}-${{ hashFiles('config/*.config', 'packages/*/Makefile', 'theme/Makefile', 'patches/openwrt/*.patch', 'scripts/apply-openwrt-patches.sh', 'scripts/ensure-extra-feeds.sh') }}" >> $GITHUB_OUTPUT
+          echo "key=arx3000m-${{ env.OPENWRT_BRANCH }}-${{ hashFiles('config/*.config', 'packages/*/Makefile', 'theme/Makefile', 'patches/openwrt/*.patch', 'scripts/apply-openwrt-patches.sh', 'scripts/ensure-extra-feeds.sh', 'scripts/patch-packages-feed.sh') }}" >> $GITHUB_OUTPUT
 
       - name: 恢复 dl 缓存
         uses: actions/cache@v5.0.4
@@ -151,6 +153,7 @@ jobs:
           ./scripts/feeds install -a -f -p telephony || true
           ./scripts/feeds install -a -f -p video || true
           ./scripts/feeds install -a -f -p openclash
+          bash "$GITHUB_WORKSPACE/scripts/patch-packages-feed.sh" "$(pwd)"
 
       - name: 加载预配置
         run: |
@@ -205,28 +208,71 @@ jobs:
       - name: 整理编译产物
         run: |
           cd ${{ env.BUILD_DIR }}
-          mkdir -p ${{ github.workspace }}/firmware
+          mkdir -p "${{ github.workspace }}/firmware-all-tmp"
           TARGET_DIR="bin/targets"
+          FW_ROOT="${{ github.workspace }}/firmware"
 
-          if [ -d "$TARGET_DIR" ]; then
-            # 固件：Filogic RAX3000M 上游为 squashfs-sysupgrade.itb / initramfs-recovery.itb 及 bootloader artifact（.bin/.fip）
-            find "$TARGET_DIR" -type f \( \
-              -name "*.bin" -o -name "*.img" -o -name "*.itb" -o \
-              -name "*.fip" -o -name "*.sysupgrade*" -o -name "*.factory*" \
-            \) | while IFS= read -r f; do
-              cp "$f" "${{ github.workspace }}/firmware/" 2>/dev/null || true
-            done
-
-            # 同时复制 manifest 和 sha256sums
-            find "$TARGET_DIR" -name "sha256sums" -exec cp {} "${{ github.workspace }}/firmware/" \; 2>/dev/null || true
-            find "$TARGET_DIR" -name "*.manifest" -exec cp {} "${{ github.workspace }}/firmware/" \; 2>/dev/null || true
-
-            echo "📦 固件产物:"
-            ls -lh "${{ github.workspace }}/firmware/" 2>/dev/null || echo "(无)"
-          else
+          if [ ! -d "$TARGET_DIR" ]; then
             echo "❌ 未找到目标目录，编译可能失败"
             tail -100 build.log || true
+            exit 1
           fi
+
+          # 固件：Filogic RAX3000M 上游为 squashfs-sysupgrade.itb / initramfs-recovery.itb 及 bootloader artifact（.bin/.fip）
+          # 使用进程替换而非 pipe|while，避免子 shell 内 exit 无法使整个 step 失败
+          set -euo pipefail
+          FW_TMP="${{ github.workspace }}/firmware-all-tmp"
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            cp "$f" "$FW_TMP/" || { echo "❌ 复制失败: $f" >&2; exit 1; }
+          done < <(find "$TARGET_DIR" -type f \( \
+            -name "*.bin" -o -name "*.img" -o -name "*.itb" -o \
+            -name "*.fip" -o -name "*.sysupgrade*" -o -name "*.factory*" \
+          \))
+
+          # 单一 sha256sums，避免多子目标互相覆盖
+          if [ -f "$TARGET_DIR/mediatek/filogic/sha256sums" ]; then
+            cp "$TARGET_DIR/mediatek/filogic/sha256sums" "$FW_TMP/"
+          else
+            s=$(find "$TARGET_DIR" -name sha256sums -type f -print -quit)
+            [ -n "$s" ] && cp "$s" "$FW_TMP/"
+          fi
+
+          # manifest：优先 filogic 目录
+          if [ -d "$TARGET_DIR/mediatek/filogic" ]; then
+            shopt -s nullglob
+            for m in "$TARGET_DIR/mediatek/filogic"/*.manifest; do
+              [ -f "$m" ] && cp "$m" "$FW_TMP/"
+            done
+            shopt -u nullglob
+          else
+            find "$TARGET_DIR" -name "*.manifest" -type f -exec cp {} "$FW_TMP/" \;
+          fi
+
+          bash "$GITHUB_WORKSPACE/scripts/split-firmware-artifacts.sh" \
+            "$FW_TMP" \
+            "$FW_ROOT"
+
+          if [ -z "$(find "$FW_ROOT/sysupgrade" -maxdepth 1 -name '*.itb' -type f -print -quit 2>/dev/null)" ]; then
+            echo "❌ sysupgrade 目录下缺少 .itb 固件，中止"
+            find "$FW_ROOT" -type f | head -50 || true
+            exit 1
+          fi
+
+          any=0
+          for d in sysupgrade nand-boot emmc-boot misc; do
+            if [ -d "$FW_ROOT/$d" ] && [ "$(ls -A "$FW_ROOT/$d" 2>/dev/null)" ]; then
+              any=1
+              break
+            fi
+          done
+          if [ "$any" -eq 0 ]; then
+            echo "❌ 分目录后无有效子目录"
+            exit 1
+          fi
+
+          echo "📦 固件产物（已分目录：sysupgrade / nand-boot / emmc-boot / misc）:"
+          find "$FW_ROOT" -type f | head -80 || true
 
       - name: 上传固件产物
         uses: actions/upload-artifact@v6.0.0
@@ -234,7 +280,7 @@ jobs:
           name: arx3000m-firmware-${{ github.run_number }}
           path: firmware/
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: 上传构建日志
         if: always()
@@ -248,10 +294,10 @@ jobs:
           if-no-files-found: ignore
 
   release:
-    name: 🚀 发布 Release (可选)
+    name: 🚀 发布 Release
     runs-on: ubuntu-22.04
     needs: build
-    # push main/master 时自动发布；手动触发时根据 upload_release 参数决定
+    # main/master 的 push 会跑；PR 不发布；手动 workflow_dispatch 时由 upload_release 决定是否发布
     if: |
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
       (github.event_name == 'workflow_dispatch' && (inputs.upload_release == true || inputs.upload_release == 'true'))
@@ -268,18 +314,35 @@ jobs:
           name: arx3000m-firmware-${{ github.run_number }}
           path: firmware/
 
+      - name: 准备 Release 附件（仅含非空子目录）
+        run: |
+          mkdir -p release-assets
+          any=0
+          for d in sysupgrade nand-boot emmc-boot misc; do
+            if [ -d "firmware/$d" ] && [ "$(ls -A firmware/$d 2>/dev/null)" ]; then
+              cp -a "firmware/$d" "release-assets/"
+              any=1
+            fi
+          done
+          if [ "$any" -eq 0 ]; then
+            echo "❌ firmware 下无 sysupgrade / nand-boot / emmc-boot / misc 有效文件"
+            ls -laR firmware/ || true
+            exit 1
+          fi
+          ls -R release-assets/
+
       - name: 生成版本标签
         id: version
         run: |
           VERSION="v1.0.${{ github.run_number }}"
           DATE=$(date '+%Y%m%d')
-          # run_attempt 在「重新运行」同一 workflow run 时递增，避免 tag 已存在导致 Release 失败
+          # run_attempt：重新运行同一 workflow run 时递增，避免 tag 已存在导致 Release 失败
           TAG="${VERSION}-${DATE}-a${{ github.run_attempt }}"
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
 
       - name: 创建 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v2.6.1
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "ARX3000M Firmware ${{ steps.version.outputs.tag }}"
@@ -289,17 +352,20 @@ jobs:
             **版本**: ${{ steps.version.outputs.tag }}
             **Commit**: `${{ github.sha }}`
             **触发**: ${{ github.actor }} via ${{ github.event_name }}
+            **说明**: 标签后缀 `-aN` 为 GitHub Actions 的 `run_attempt`，同一 run 重试时会递增以免与已有 tag 冲突。
             
             ---
             
             ### 固件说明（OpenWrt `main` / `cmcc_rax3000m`）
             
-            | 文件（通配） | 用途 |
+            产物分目录（避免 NAND / eMMC 裸刷件与日常升级包混放）：
+            
+            | 目录 | 内容 |
             |------|------|
-            | `*cmcc_rax3000m*squashfs*sysupgrade*.itb` | **日常升级**：LuCI「备份/升级」或 SSH `sysupgrade` |
-            | `*cmcc_rax3000m*initramfs*recovery*.itb` | **救砖/串口**：U-Boot + TFTP 等（勿当普通 LuCI 包乱刷） |
-            | `*cmcc_rax3000m*nand-ddr3-*.bin`/`.fip` 或 `*nand-ddr4-*` | **裸写 Flash**：仅救砖/首次写入，**DDR3/DDR4 必须与硬件一致** |
-            | `*cmcc_rax3000m*emmc-*` | eMMC 算力版用；**NAND 版勿刷** |
+            | **`sysupgrade/`** | `*squashfs*sysupgrade*.itb`（日常升级）、`*initramfs*recovery*.itb`（救砖/TFTP）、`*.manifest`、FIT 别名 `.bin` 等 |
+            | **`nand-boot/`** | `*nand-ddr3-*` / `*nand-ddr4-*` 的 preloader / fip：**仅 NAND 机裸写**，DDR 型号须与硬件一致 |
+            | **`emmc-boot/`** | `*emmc-*`：**仅 eMMC 算力版裸写**；NAND 机勿用 |
+            | **`misc/`** | 未归入上列的上游文件；**勿当作日常 sysupgrade**，仅供排查或特殊用途 |
             
             ### 刷入方法（已运行 OpenWrt 时）
             
@@ -316,25 +382,8 @@ jobs:
             - ✅ 高级网络工具 (端口转发/防火墙/诊断)
             
             > ⚠️ 请确认你的设备型号为 RAX3000M (MT7981B)，刷错型号可能导致变砖！
-          files: firmware/*
+          files: release-assets/**
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  cleanup:
-    name: 清理旧 Release
-    runs-on: ubuntu-22.04
-    needs: release
-    if: always() && needs.release.result == 'success'
-    permissions:
-      contents: write
-
-    steps:
-      - name: 清理旧的 Release (保留最新 5 个)
-        uses: dev-drprasad/delete-older-releases@v0.3.0
-        with:
-          keep_latest: 5
-          delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

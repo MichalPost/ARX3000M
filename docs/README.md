@@ -23,6 +23,10 @@
 | 无线 | AX3000 WiFi6 (MT7976CN) |
 | OpenWrt 目标平台 | `mediatek/filogic` |
 
+## 相关文档
+
+- **[系统内升级（sysupgrade）](sysupgrade-guide.md)**：在已运行 OpenWrt 时如何选择 `sysupgrade.itb`、校验、`sysupgrade -T` 与命令行/LuCI 操作步骤，以及 NAND / eMMC 变体与救砖注意事项。
+
 ## 目录结构
 
 ```
@@ -44,6 +48,7 @@ ARX3000M/
     ├── luci-app-arx-netmgr/      # 网络/设备管理
     ├── luci-app-arx-network/     # 高级网络功能
     ├── luci-app-arx-software/    # 软件源 / 包管理
+    ├── luci-app-arx-flash/       # 固件上传、sysupgrade 校验/刷写、配置备份
     ├── luci-app-arx-bridge/      # WiFi 桥接/上联概览
     ├── luci-app-arx-wizard/      # 设置向导
     ├── luci-app-arx-wificrack/   # WiFi 握手抓包工具
@@ -108,7 +113,7 @@ git push -u origin main
 | **日志保留** | 构建日志自动打包为 Artifact，保留 7 天 |
 | **固件保留** | 固件 Artifact 保留 14 天 |
 | **自动发布** | push main/master 自动创建 GitHub Release；手动触发默认也发布 |
-| **版本管理** | 格式 `v1.0.<run_id>-<日期>`，自动清理旧版本（保留最新 5 个） |
+| **版本管理** | 格式 `v1.0.<run_id>-<日期>`，历史 Release 保留不自动删除 |
 
 ### 自定义配置修改
 
@@ -195,7 +200,7 @@ bin/targets/mediatek/filogic/
 └── …
 ```
 
-> **注意**：上游 `cmcc_rax3000m` 的**系统升级镜像为 `.itb`**，不是旧的 `squashfs-sysupgrade.bin`。NAND 版日常升级只用带 **`sysupgrade`** 的 **`.itb`**；**`emmc-*`** 工件仅 eMMC 算力版需要，NAND 机勿刷。
+> **注意**：上游 `cmcc_rax3000m` 的**系统升级镜像为 `.itb`**，不是旧的 `squashfs-sysupgrade.bin`。NAND 版日常升级只用带 **`sysupgrade`** 的 **`.itb`**；**`emmc-*`** 仅 eMMC 算力版裸刷需要，NAND 机勿刷。GitHub Actions 构建会将产物分目录为 **`sysupgrade/`**、**`nand-boot/`**、**`emmc-boot/`**、**`misc/`**（`misc/` 内为未归类上游文件，勿当日常 sysupgrade；本地可用 `scripts/split-firmware-artifacts.sh` 对齐）。`sysupgrade/` 与 recovery 镜像同目录时勿选错，详见 [系统内升级指南](sysupgrade-guide.md)。
 
 ## 功能模块详解
 

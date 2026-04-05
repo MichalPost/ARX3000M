@@ -61,7 +61,7 @@
             var html = '';
             for (var k = 0; k < disks.length; k++) {
                 var x = disks[k];
-                var pct = typeof x.use_percent === 'number' ? x.use_percent : Math.round((x.used / x.total) * 100);
+                var pct = typeof x.use_percent === 'number' ? x.use_percent : (x.total > 0 ? Math.round((x.used / x.total) * 100) : 0);
                 var fmb = typeof x.free_mb === 'number' ? x.free_mb : Math.round(x.free / 1048576);
                 var cls = 'storage-row';
                 if (x.warn_level === 'danger') cls += ' storage-danger';
@@ -83,6 +83,7 @@
     if (typeof cfg.pollServices !== 'number') cfg.pollServices = 45;
     if (typeof cfg.pollDisk !== 'number') cfg.pollDisk = 90;
     if (typeof cfg.pollHeroDevices !== 'number') cfg.pollHeroDevices = 45;
+    if (typeof cfg.pollTopn !== 'number') cfg.pollTopn = 60;
     cfg.visibilityPause = cfg.visibilityPause === true || cfg.visibilityPause === 'true';
     if (typeof cfg.hiddenMult !== 'number') cfg.hiddenMult = 3;
     if (typeof cfg.deferHeavyMs !== 'number') cfg.deferHeavyMs = 1500;
@@ -219,8 +220,9 @@
         setCardHint('cpu-hint', t, lvl);
     }
 
-    function hintMem(total, free) {
-        var freePct = total > 0 ? (free / total) * 100 : 0;
+    function hintMem(total, free, cached) {
+        var avail = (typeof free === 'number' ? free : 0) + (typeof cached === 'number' ? cached : 0);
+        var freePct = total > 0 ? (avail / total) * 100 : 0;
         var lvl = '';
         var t = '含缓存可回收；关注「可用」是否过低。';
         if (freePct < 8) { t = '可用内存过低，服务可能被 OOM 终止，建议关闭不必要插件或扩容。'; lvl = 'danger'; }
@@ -271,7 +273,7 @@
             try {
                 var h = JSON.parse(xhr.responseText);
                 var dd = h.ddns || {};
-                var en = dd.enabled || 0, run = dd.running || 0;
+                var en = parseInt(dd.enabled, 10) || 0, run = parseInt(dd.running, 10) || 0;
                 var hel = document.getElementById('hero-ddns');
                 if (hel) {
                     if (en === 0) {
@@ -373,32 +375,45 @@
         if (data.cpu) {
             var cp = typeof data.cpu.percent === 'number' ? data.cpu.percent : 0;
             lastCpuPct = cp;
-            document.getElementById('cpu-value').textContent = data.cpu.percent;
-            document.getElementById('cpu-bar').style.width = data.cpu.percent + '%';
-            document.getElementById('cpu-sub').textContent = '用户:' + data.cpu.user + ' 系统:' + data.cpu.system;
-            hintCpu(data.cpu.percent);
+            var elCpuV = document.getElementById('cpu-value');
+            var elCpuB = document.getElementById('cpu-bar');
+            var elCpuS = document.getElementById('cpu-sub');
+            if (elCpuV) elCpuV.textContent = data.cpu.percent;
+            if (elCpuB) elCpuB.style.width = data.cpu.percent + '%';
+            if (elCpuS) elCpuS.textContent = '用户:' + data.cpu.user + ' 系统:' + data.cpu.system;
+            if (data.cpu.cpu_stat_warn) {
+                setCardHint('cpu-hint', '无法写入 CPU 采样缓存（/tmp 可能已满），显示值可能偏低。', 'warn');
+            } else {
+                hintCpu(data.cpu.percent);
+            }
         }
         if (data.memory) {
             var t = Math.round(data.memory.total / 1048576);
             var u = Math.round((data.memory.total - data.memory.free) / 1048576);
             var p = t > 0 ? Math.round(u/t*100) : 0;
-            document.getElementById('mem-value').textContent = u + '/' + t;
-            document.getElementById('mem-bar').style.width = p + '%';
-            document.getElementById('mem-sub').textContent = '可用:' + Math.round(data.memory.free/1048576) + ' MB · 缓存:' + Math.round((data.memory.cached||0)/1048576) + ' MB';
-            hintMem(data.memory.total, data.memory.free);
+            var elMemV = document.getElementById('mem-value');
+            var elMemB = document.getElementById('mem-bar');
+            var elMemS = document.getElementById('mem-sub');
+            if (elMemV) elMemV.textContent = u + '/' + t;
+            if (elMemB) elMemB.style.width = p + '%';
+            if (elMemS) elMemS.textContent = '可用:' + Math.round(data.memory.free/1048576) + ' MB · 缓存:' + Math.round((data.memory.cached||0)/1048576) + ' MB';
+            hintMem(data.memory.total, data.memory.free, data.memory.cached);
         }
         if (data.interfaces) {
             var tr=0, tt=0;
             for (var i=0;i<data.interfaces.length;i++) { tr+=data.interfaces[i].rx_bytes||0; tt+=data.interfaces[i].tx_bytes||0; }
             var now=Date.now(), dt=(now-prevTime)/1000;
+            var elNetV = document.getElementById('net-value');
+            var elNetS = document.getElementById('net-sub');
+            var elNetB = document.getElementById('net-bar');
             if (dt>0 && prevTime>0) {
                 var rxR=Math.max(0,(tr-prevRx)/dt), txR=Math.max(0,(tt-prevTx)/dt);
                 lastNetBps = rxR + txR;
                 netSampleReady = true;
-                document.getElementById('net-value').innerHTML='<span class="metric-inline">↓'+formatBytes(rxR)+'</span><span class="metric-inline metric-inline--muted">↑'+formatBytes(txR)+'</span>';
-                document.getElementById('net-sub').textContent='↓ 总:'+formatBytes(tr)+' · ↑ 总:'+formatBytes(tt);
+                if (elNetV) elNetV.innerHTML='<span class="metric-inline">↓'+formatBytes(rxR)+'</span><span class="metric-inline metric-inline--muted">↑'+formatBytes(txR)+'</span>';
+                if (elNetS) elNetS.textContent='↓ 总:'+formatBytes(tr)+' · ↑ 总:'+formatBytes(tt);
                 var netPct = Math.min(100, Math.round((rxR + txR) / (1048576 * 8) * 100));
-                document.getElementById('net-bar').style.width = netPct + '%';
+                if (elNetB) elNetB.style.width = netPct + '%';
                 hintNet(rxR, txR);
                 updateSpeedGauge(rxR, txR);
             } else {
@@ -409,14 +424,19 @@
         }
         if (data.temperature && data.temperature.length > 0) {
             var t=data.temperature[0];
-            document.getElementById('temp-value').textContent=t.temp_c;
-            document.getElementById('temp-bar').style.width=Math.min(100,t.temp_c)+'%';
-            document.getElementById('temp-sub').textContent=t.name+': '+t.temp_c+'°C';
+            var elTv = document.getElementById('temp-value');
+            var elTb = document.getElementById('temp-bar');
+            var elTs = document.getElementById('temp-sub');
+            if (elTv) elTv.textContent=t.temp_c;
+            if (elTb) elTb.style.width=Math.min(100,t.temp_c)+'%';
+            if (elTs) elTs.textContent=t.name+': '+t.temp_c+'°C';
             hintTemp(t.temp_c);
         }
         if (data.uptime) {
-            document.getElementById('uptime-value').textContent=formatUptime(data.uptime);
-            document.getElementById('uptime-sub').textContent=new Date(Date.now()-data.uptime*1000).toLocaleString();
+            var elUv = document.getElementById('uptime-value');
+            var elUs = document.getElementById('uptime-sub');
+            if (elUv) elUv.textContent=formatUptime(data.uptime);
+            if (elUs) elUs.textContent=new Date(Date.now()-data.uptime*1000).toLocaleString();
         }
     }
 
@@ -512,7 +532,8 @@
                     html+='<td style="color:var(--primary-light);">'+formatBytes(f.tx_bytes)+'</td></tr>';
                 }
                 if(!html) html='<tr><td colspan="5" style="text-align:center;padding:16px;">无数据</td></tr>';
-                document.querySelector('#iface-table tbody').innerHTML=html;
+                var tbIf = document.querySelector('#iface-table tbody');
+                if (tbIf) tbIf.innerHTML=html;
             } catch(e){}
         };
         xhr.send();
@@ -549,10 +570,10 @@
                 for(var i=0;i<Math.min(list.length,10);i++) {
                     var p=list[i];
                     html+='<div class="process-row">';
-                    html+='<span class="process-pid">'+p.pid+'</span>';
+                    html+='<span class="process-pid">'+esc(String(p.pid != null ? p.pid : ''))+'</span>';
                     html+='<span class="process-name">'+esc(p.name)+'</span>';
-                    html+='<span class="process-cpu">'+p.cpu+'%</span>';
-                    html+='<span class="process-mem">'+p.mem+'%</span>';
+                    html+='<span class="process-cpu">'+esc(String(p.cpu != null ? p.cpu : ''))+'%</span>';
+                    html+='<span class="process-mem">'+esc(String(p.mem != null ? p.mem : ''))+'%</span>';
                     html+='</div>';
                 }
                 if(!html) html='<p style="padding:16px;text-align:center;color:var(--text-muted);">无进程数据</p>';
@@ -676,6 +697,94 @@
         xhr.send();
     }
 
+    function renderTopn(j, macMap) {
+        var hx = document.getElementById('dash-topn-hosts');
+        var dx = document.getElementById('dash-topn-domains');
+        var cx = document.getElementById('dash-topn-ct');
+        var hn = document.getElementById('dash-topn-hosts-note');
+        var cn = document.getElementById('dash-topn-ct-note');
+        if (!hx || !dx || !cx) return;
+        macMap = macMap || {};
+        if (hn) {
+            hn.textContent = j.nlbwmon_ok ? 'nlbwmon 数据（周期统计，非纯实时）' : (j.nlbwmon_note || 'nlbwmon 不可用');
+        }
+        var hosts = j.hosts || [];
+        if (!hosts.length) {
+            hx.innerHTML = '<span style="color:var(--text-muted)">无数据</span>';
+        } else {
+            var hh = '';
+            for (var i = 0; i < hosts.length; i++) {
+                var h = hosts[i];
+                var key = (h.id || '').toString().toUpperCase();
+                var lbl = macMap[key] ? (macMap[key] + ' · ') : '';
+                hh += '<div>' + esc(lbl + (h.id || '')) + ' · <strong>' + esc(formatBytes(h.total_bytes || 0)) + '</strong></div>';
+            }
+            hx.innerHTML = hh;
+        }
+        var doms = j.domains || [];
+        if (!doms.length) {
+            dx.innerHTML = '<span style="color:var(--text-muted)">无 layer7 数据或未启用采集</span>';
+        } else {
+            var dh = '';
+            for (var d = 0; d < doms.length; d++) {
+                var z = doms[d];
+                dh += '<div>' + esc(z.id || '') + ' · <strong>' + esc(formatBytes(z.total_bytes || 0)) + '</strong></div>';
+            }
+            dx.innerHTML = dh;
+        }
+        var ct = j.conntrack || [];
+        if (cn) cn.textContent = j.conntrack_note || '';
+        if (!ct.length) {
+            cx.innerHTML = '<span style="color:var(--text-muted)">无数据</span>';
+        } else {
+            var ch = '';
+            for (var c = 0; c < ct.length; c++) {
+                var r = ct[c];
+                ch += '<div>' + esc(r.dst || '') + ' · <strong>' + esc(String(r.connections || 0)) + '</strong> 连接</div>';
+            }
+            cx.innerHTML = ch;
+        }
+    }
+
+    function loadTopnTraffic() {
+        if (!U.topn_traffic_data) return;
+        var hx = document.getElementById('dash-topn-hosts');
+        if (!hx) return;
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', U.topn_traffic_data + '?_=' + Date.now(), true);
+        xhr.timeout = 15000;
+        xhr.onload = function() {
+            if (xhr.status !== 200) return;
+            try {
+                var j = JSON.parse(xhr.responseText);
+                if (!U.devices_json) {
+                    renderTopn(j, {});
+                    return;
+                }
+                var x2 = new XMLHttpRequest();
+                x2.open('GET', U.devices_json + '?_=' + Date.now(), true);
+                x2.timeout = 8000;
+                x2.onload = function() {
+                    var map = {};
+                    if (x2.status === 200) try {
+                        var d = JSON.parse(x2.responseText);
+                        var devs = d.devices || [];
+                        for (var i = 0; i < devs.length; i++) {
+                            var dv = devs[i];
+                            var mac = (dv.mac || '').toString().toUpperCase();
+                            if (!mac) continue;
+                            map[mac] = (dv.alias && String(dv.alias).trim()) || (dv.hostname && String(dv.hostname).trim()) || '';
+                        }
+                    } catch (e2) {}
+                    renderTopn(j, map);
+                };
+                x2.onerror = function() { renderTopn(j, {}); };
+                x2.send();
+            } catch (e) {}
+        };
+        xhr.send();
+    }
+
     function loadLogs() {
         if (!U.logs) return;
         var xhr=new XMLHttpRequest();
@@ -726,6 +835,7 @@
         var lh = Math.max(5000, cfg.pollHeroDevices * 1000 * m);
         var lnh = Math.max(5000, cfg.pollServices * 1000 * m);
         var lm = Math.max(10000, cfg.pollServices * 2 * 1000 * m);
+        var ltop = Math.max(30000, cfg.pollTopn * 1000 * m);
         pollTimers.push(setInterval(pollRealtime, rt));
         pollTimers.push(setInterval(loadDiskUsage, ld));
         pollTimers.push(setInterval(loadServices, ls));
@@ -736,6 +846,7 @@
         if (U.ipv6_status) pollTimers.push(setInterval(loadIpv6Status, lm));
         if (U.mesh_status) pollTimers.push(setInterval(loadMeshStatus, lm));
         if (U.wifi_env) pollTimers.push(setInterval(loadWifiEnv, Math.max(60000, rt * 6)));
+        if (U.topn_traffic_data) pollTimers.push(setInterval(loadTopnTraffic, ltop));
     }
 
     function loadMwanStatus() {
@@ -879,6 +990,7 @@
     loadIpv6Status();
     loadMeshStatus();
     loadWifiEnv();
+    loadTopnTraffic();
 
     schedulePolling();
     document.addEventListener('visibilitychange', function() {
@@ -892,6 +1004,7 @@
             loadIpv6Status();
             loadMeshStatus();
             loadWifiEnv();
+            loadTopnTraffic();
         }
     });
 

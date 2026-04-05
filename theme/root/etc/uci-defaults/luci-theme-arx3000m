@@ -7,7 +7,10 @@ uci -q batch <<-EOF >/dev/null
 	set luci.themes.arx3000m.name='ARX3000M'
 	set luci.themes.arx3000m.title='ARX3000M Modern'
 	set luci.main.lang='zh_cn'
-	commit luci
 EOF
+
+[ -z "$(uci -q get luci.main.mediaurlbase 2>/dev/null)" ] && uci set luci.main.mediaurlbase='/luci-static/arx3000m'
+
+uci commit luci
 
 exit 0

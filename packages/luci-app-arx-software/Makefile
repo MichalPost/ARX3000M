@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-arx-software
 PKG_VERSION:=1.0.0
-PKG_RELEASE:=5
+PKG_RELEASE:=6
 
 PKG_MAINTAINER:=ARX3000M Custom Build
 PKG_LICENSE:=Apache-2.0
@@ -43,6 +43,8 @@ define Package/luci-app-arx-software/install
 	$(INSTALL_BIN) ./root/sbin/arx-extroot-wizard $(1)/sbin/arx-extroot-wizard
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_CONF) ./root/usr/share/rpcd/acl.d/*.json $(1)/usr/share/rpcd/acl.d/
+	$(INSTALL_DIR) $(1)/usr/share/arx-software
+	$(INSTALL_DATA) ./root/usr/share/arx-software/curated.json $(1)/usr/share/arx-software/curated.json
 endef
 
 $(eval $(call BuildPackage,luci-app-arx-software))

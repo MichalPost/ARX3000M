@@ -56,6 +56,88 @@ local function shell_exit_code(cmd)
 	return code
 end
 
+local function iwinfo_essid(iface)
+	local info = sys.exec("iwinfo " .. iface .. " info 2>/dev/null") or ""
+	local q = info:match('ESSID:%s*"(.-)"')
+	if q and q ~= "" then return q end
+	local u = info:match("ESSID:%s*(%S+)")
+	if u and u ~= "" and u ~= "unknown" then return u end
+	return nil
+end
+
+local function is_blocked(mac, u)
+	local section_id = mac:gsub(":", "")
+	local blocked = u:get("arx-netmgr", section_id, "blocked")
+	return blocked == "1" or blocked == "true" or blocked == "yes"
+end
+
+local function get_wifi_clients()
+	local clients = {}
+
+	local wifi_status = sys.exec("iwinfo 2>/dev/null | grep -E '^[a-z]' | awk '{print $1}'")
+	if wifi_status then
+		for iface in wifi_status:gmatch("%S+") do
+			if iface:match("^[%w]+$") then
+				local ssid = iwinfo_essid(iface) or iface
+				local station_dump = sys.exec("iwinfo " .. iface .. " assoclist 2>/dev/null")
+				if station_dump then
+					-- MAC 统一大写，避免 iwinfo 版本差异导致与 ARP/DHCP 键不一致
+					for mac, info in station_dump:gmatch("(%x%x:%x%x:%x%x:%x%x:%x%x:%x%x)%s+(.+)") do
+						mac = mac:upper()
+						local signal = info:match("Signal:(%-?%d+)") or "-60"
+						local rssi = info:match("RSSI:(%-?%d+)") or signal
+						local txrate = info:match("Tx Rate:(%S+)") or "?"
+						clients[mac] = {
+							ssid = ssid,
+							signal = signal,
+							rssi = rssi,
+							tx_rate = txrate,
+							connected_time = ""
+						}
+					end
+				end
+			end
+		end
+	end
+
+	return clients
+end
+
+local function get_vendor(mac)
+	local oui = mac:sub(1, 8):lower()
+	if not oui:match("^%x%x:%x%x:%x%x$") then return "Unknown" end
+
+	local f = io.open("/usr/share/oui/oui.txt", "r")
+	if f then
+		for line in f:lines() do
+			if line:find(oui, 1, true) then
+				f:close()
+				return line:match("^%S+%s+(.+)$") or "Unknown"
+			end
+		end
+		f:close()
+	end
+
+	local oui6 = oui:gsub(":", "")
+	local nf = io.open("/usr/share/nmap/nmap-mac-prefixes", "r")
+	if nf then
+		for line in nf:lines() do
+			local head = line:match("^(%S+)")
+			if head then
+				local h = head:lower()
+				if h == oui or h == oui6 then
+					nf:close()
+					local rest = line:match("^%S+%s+(.+)$") or ""
+					return rest:match("^%s*(.-)%s*$") or "Unknown"
+				end
+			end
+		end
+		nf:close()
+	end
+
+	return "Unknown"
+end
+
 -- ==================== 业务逻辑 ====================
 
 function action_devices()
@@ -71,11 +153,13 @@ function action_devices()
 	if lease_file then
 		for line in lease_file:lines() do
 			local exp_time, mac, ip, name = line:match("(%S+)%s+(%S+)%s+(%S+)%s+(.*)")
-			-- [CRIT-4] dhcp.leases 中 MAC 是小写，统一转大写后作为 key，与 ARP 表保持一致
+	-- [M-1] 过滤 dnsmasq 对未知主机名的占位符 "*"，避免前端显示星号
 			if exp_time and mac and ip then
+				local hn = name or ""
+				if hn == "*" then hn = "" end
 				dhcp_leases[mac:upper()] = {
 					ip = ip,
-					hostname = name or "",
+					hostname = hn,
 					expires = tonumber(exp_time) or 0,
 					mac = mac:upper()
 				}
@@ -142,10 +226,43 @@ function action_devices()
 	table.sort(devices, function(a, b)
 		if a.blocked and not b.blocked then return false end
 		if not a.blocked and b.blocked then return true end
-		return (a.hostname or a.ip) < (b.hostname or b.ip)
+		-- [L-1] IP 地址用点分十进制数值比较，避免字符串排序 "10.x" < "9.x" 的错误
+		local function ip_key(d)
+			if d.hostname and d.hostname ~= "" then return "\x00" .. d.hostname end
+			local ip = d.ip or ""
+			local a1,b1,c1,d1 = ip:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+			if a1 then
+				return string.format("%03d.%03d.%03d.%03d", a1, b1, c1, d1)
+			end
+			return ip
+		end
+		return ip_key(a) < ip_key(b)
 	end)
 
 	http.write_json({ devices = devices, total = #devices })
+end
+
+-- [L-1] 优先 nixio mkstemp；否则 /dev/urandom 高熵后缀（避免可预测 math.random）
+local function bl_tmpname(base)
+	if type(nixio.fs.mkstemp) == "function" then
+		local ok, r1, r2 = pcall(nixio.fs.mkstemp, base .. ".tmp.XXXXXX")
+		if ok then
+			if type(r1) == "string" then return r1 end
+			if type(r2) == "string" then return r2 end
+		end
+	end
+	local rnd = ""
+	local ur = io.open("/dev/urandom", "rb")
+	if ur then
+		local raw = ur:read(8) or ""
+		ur:close()
+		for i = 1, #raw do
+			rnd = rnd .. string.format("%02x", raw:byte(i))
+		end
+	end
+	if rnd == "" then rnd = tostring(math.random(1, 2147483647)) end
+	local pid = (nixio.getpid and nixio.getpid()) or 0
+	return base .. ".tmp." .. tostring(os.time()) .. "_" .. tostring(pid) .. "_" .. rnd
 end
 
 function action_block_device()
@@ -195,7 +312,7 @@ function action_block_device()
 	-- 同时保证去重：先读全文，过滤后写回
 	local dhcp_mac = mac:gsub(":", "")
 	local BLOCKLIST = "/tmp/blocklist_dhcp"
-	local tmp_bl = BLOCKLIST .. ".tmp." .. tostring(os.time()) .. tostring(math.random(10000))
+	local tmp_bl = bl_tmpname(BLOCKLIST)
 	local existing_lines = {}
 	local already_present = false
 	local rf = io.open(BLOCKLIST, "r")
@@ -250,7 +367,7 @@ function action_unblock_device()
 	-- H-2/H-3: 原子写回，消除 unblock 时的竞态
 	local dhcp_mac = mac:gsub(":", "")
 	local BLOCKLIST = "/tmp/blocklist_dhcp"
-	local tmp_bl = BLOCKLIST .. ".tmp." .. tostring(os.time()) .. tostring(math.random(10000))
+	local tmp_bl = bl_tmpname(BLOCKLIST)
 	local rf2 = io.open(BLOCKLIST, "r")
 	if rf2 then
 		local lines = {}
@@ -273,7 +390,7 @@ end
 
 function action_save_device_meta()
 	http.prepare_content("application/json")
-	if http.getenv("REQUEST_METHOD") ~= "POST" then
+	if (http.getenv("REQUEST_METHOD") or ""):upper() ~= "POST" then
 		http.write_json({ ok = false, error = "需要 POST" })
 		return
 	end
@@ -361,72 +478,4 @@ function action_device_detail()
 	detail.vendor = vendor
 
 	http.write_json(detail)
-end
-
-function is_blocked(mac, u)
-	local section_id = mac:gsub(":", "")
-	local blocked = u:get("arx-netmgr", section_id, "blocked")
-	return blocked == "1" or blocked == "true" or blocked == "yes"
-end
-
-local function iwinfo_essid(iface)
-	local info = sys.exec("iwinfo " .. iface .. " info 2>/dev/null") or ""
-	local q = info:match('ESSID:%s*"(.-)"')
-	if q and q ~= "" then return q end
-	local u = info:match("ESSID:%s*(%S+)")
-	if u and u ~= "" and u ~= "unknown" then return u end
-	return nil
-end
-
-function get_wifi_clients()
-	local clients = {}
-
-	local wifi_status = sys.exec("iwinfo 2>/dev/null | grep -E '^[a-z]' | awk '{print $1}'")
-	if wifi_status then
-		for iface in wifi_status:gmatch("%S+") do
-			-- [M8] 验证接口名格式，防止含特殊字符时注入 shell
-			if not iface:match("^[%w]+$") then goto continue end
-			local ssid = iwinfo_essid(iface) or iface
-			local station_dump = sys.exec("iwinfo " .. iface .. " assoclist 2>/dev/null")
-			if station_dump then
-				for mac, info in station_dump:gmatch("(%x%x:%x%x:%x%x:%x%x:%x%x:%x%x)%s+(.+)") do
-					mac = mac:upper()
-					local signal = info:match("Signal:(%-?%d+)") or "-60"
-					local rssi = info:match("RSSI:(%-?%d+)") or signal
-					local txrate = info:match("Tx Rate:(%S+)") or "?"
-					clients[mac] = {
-						ssid = ssid,
-						signal = signal,
-						rssi = rssi,
-						tx_rate = txrate,
-						connected_time = ""
-					}
-				end
-			end
-			::continue::
-		end
-	end
-
-	return clients
-end
-
-function get_vendor(mac)
-	local oui = mac:sub(1, 8):lower()
-	-- [M6] 验证 OUI 格式（xx:xx:xx），防止 grep 命令注入
-	if not oui:match("^%x%x:%x%x:%x%x$") then return "Unknown" end
-
-	local f = io.open("/usr/share/oui/oui.txt", "r")
-	if f then
-		for line in f:lines() do
-			if line:find(oui, 1, true) then
-				f:close()
-				return line:match("^%S+%s+(.+)$") or "Unknown"
-			end
-		end
-		f:close()
-	end
-
-	-- [M6] oui 已验证为 xx:xx:xx 格式，安全传入 grep
-	local result = sys.exec("grep -i '^" .. oui .. "' /usr/share/nmap/nmap-mac-prefixes 2>/dev/null | head -1 | cut -f2-")
-	return result and result:match("^%s*(.-)%s*$") or "Unknown"
 end

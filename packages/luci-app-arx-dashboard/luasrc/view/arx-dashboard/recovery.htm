@@ -38,9 +38,9 @@
   <h2 class="section-title"><svg class="arx-icon arx-icon--title" aria-hidden="true"><use href="#i-arrow-up"/></svg>sysupgrade 与保留配置</h2>
   <div class="arx-prose">
     <p>跨大版本或更换分支升级时，<strong>保留配置</strong>可能导致 UCI 与新版默认值不兼容。若升级后异常，可在 failsafe 或首次启动失败时尝试不保留配置重刷，或手动清理 <code>/etc/config</code> 冲突项。</p>
-    <p>建议：跨大版本升级时使用 <code>-n</code> 参数不保留配置：</p>
+    <p>建议：跨大版本升级时使用 <code>-n</code> 参数不保留配置。日常升级请使用文件名含 <code>sysupgrade</code> 的 <code>.itb</code>，勿与 <code>recovery</code> 救砖镜像混淆。</p>
   </div>
-  <pre class="arx-code-block">sysupgrade -n /tmp/firmware.bin</pre>
+  <pre class="arx-code-block">sysupgrade -n /tmp/firmware.itb</pre>
   <div class="arx-callout arx-callout--warn">使用 <code>-n</code> 参数将清除所有自定义配置，升级前请备份重要设置。</div>
 </div>
 

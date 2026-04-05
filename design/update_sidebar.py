@@ -4,22 +4,24 @@ Batch-replace <aside class="sidebar">...</aside> in all target HTML files
 and inject <script src="js/sidebar.js"></script> before common.js.
 """
 
+import argparse
 import re
+import sys
 from pathlib import Path
 
 FILES = [
-    "design/dashboard.html",
-    "design/netmgr.html",
-    "design/network.html",
-    "design/bridge.html",
-    "design/wificrack.html",
-    "design/evil_twin.html",
-    "design/software.html",
-    "design/wizard.html",
-    "design/wifi_rssi.html",
-    "design/dns_chain.html",
-    "design/adguard_oc.html",
-    "design/recovery.html",
+    "dashboard.html",
+    "netmgr.html",
+    "network.html",
+    "bridge.html",
+    "wificrack.html",
+    "evil_twin.html",
+    "software.html",
+    "wizard.html",
+    "wifi_rssi.html",
+    "dns_chain.html",
+    "adguard_oc.html",
+    "recovery.html",
 ]
 
 NEW_ASIDE = '''\
@@ -76,8 +78,8 @@ def inject_sidebar_script(html: str) -> tuple[str, bool]:
     return injected, True
 
 
-def process_file(path: str) -> None:
-    p = Path(path)
+def process_file(path: Path) -> None:
+    p = path
     if not p.exists():
         print(f"  SKIP  {path}  (file not found)")
         return
@@ -98,8 +100,30 @@ def process_file(path: str) -> None:
         print(f"  NOOP  {path}  (nothing to change)")
 
 
-if __name__ == "__main__":
-    print("=== update_sidebar.py ===")
-    for f in FILES:
-        process_file(f)
-    print("=== done ===")
+def main() -> None:
+    ap = argparse.ArgumentParser(description='批量替换 sidebar 并注入 sidebar.js')
+    ap.add_argument(
+        '--dir',
+        type=Path,
+        default=None,
+        help='含页面 HTML 的目录（默认：本脚本所在目录，即 design/）',
+    )
+    args = ap.parse_args()
+    base = args.dir.resolve() if args.dir else Path(__file__).resolve().parent
+    if not base.is_dir():
+        print(f'错误: 不是目录: {base}', file=sys.stderr)
+        sys.exit(1)
+    if not any((base / name).is_file() for name in FILES):
+        print(
+            f'错误: 在 {base} 下未找到任何已知页面（{", ".join(FILES[:3])} 等），请确认 --dir 指向 design 目录',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print('=== update_sidebar.py ===')
+    for name in FILES:
+        process_file(base / name)
+    print('=== done ===')
+
+
+if __name__ == '__main__':
+    main()
